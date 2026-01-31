@@ -511,17 +511,28 @@ export class EmbeddingManager {
     console.log(`[Calcifer]   Embedding with batchSize: ${batchSize}`);
     
     for (let i = 0; i < chunks.length; i += batchSize) {
+      console.log(`[Calcifer]   Starting batch loop iteration i=${i}`);
+      
       // Check if stopped
       if (this.circuitBroken) {
+        console.log(`[Calcifer]   Circuit broken, stopping`);
         throw new Error('Indexing stopped');
       }
       
       const batch = chunks.slice(i, i + batchSize);
+      console.log(`[Calcifer]   Batch sliced: ${batch.length} items`);
       
-      // Rate limit
-      console.time(`[Calcifer]   rateLimiter.acquire`);
-      await this.rateLimiter.acquire();
-      console.timeEnd(`[Calcifer]   rateLimiter.acquire`);
+      // Rate limit - with timeout fallback
+      console.log(`[Calcifer]   Waiting for rate limiter (tokens: ${this.rateLimiter.getAvailableTokens()})`);
+      const rateLimitPromise = this.rateLimiter.acquire();
+      const rateLimitTimeout = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          console.warn(`[Calcifer]   Rate limiter taking too long, proceeding anyway`);
+          resolve();
+        }, 5000);
+      });
+      await Promise.race([rateLimitPromise, rateLimitTimeout]);
+      console.log(`[Calcifer]   Rate limiter passed`);
       
       try {
         // Batch embed call - send multiple texts at once

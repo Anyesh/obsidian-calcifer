@@ -37,10 +37,19 @@ export class RateLimiter {
       return;
     }
     
-    // Wait for a token
+    // Wait for a token with a maximum wait time
     return new Promise((resolve) => {
-      this.waitQueue.push(resolve);
-      this.scheduleRefill();
+      // Calculate time until next token
+      const timeToNextToken = Math.ceil((1 - this.tokens) / this.refillRate);
+      const maxWait = Math.min(timeToNextToken, 2000); // Never wait more than 2 seconds
+      
+      setTimeout(() => {
+        this.refill();
+        if (this.tokens >= 1) {
+          this.tokens--;
+        }
+        resolve();
+      }, maxWait);
     });
   }
 
