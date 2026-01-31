@@ -176,6 +176,38 @@ export class EmbeddingManager {
     this.isIndexing = true;
     
     try {
+      // Health check before starting
+      console.log('[Calcifer] Running provider health check...');
+      const healthResults = await this.providerManager.checkAllHealth();
+      
+      // Find the first healthy provider
+      let healthCheck = null;
+      for (const [id, result] of healthResults) {
+        console.log(`[Calcifer] Provider ${id} health:`, result);
+        if (result.healthy) {
+          healthCheck = result;
+          break;
+        }
+      }
+      
+      if (!healthCheck) {
+        const errors = Array.from(healthResults.values())
+          .map(r => r.error)
+          .filter(Boolean)
+          .join(', ');
+        new Notice(`Provider connection failed: ${errors || 'Unknown error'}\n\nTry enabling "Use native fetch" in settings if using localhost.`, 10000);
+        this.isIndexing = false;
+        return;
+      }
+      
+      if (!healthCheck.modelInfo?.embeddingAvailable) {
+        new Notice(`Embedding model not found on server. Check settings.`, 5000);
+        this.isIndexing = false;
+        return;
+      }
+      
+      console.log('[Calcifer] Health check passed, latency:', healthCheck.latencyMs, 'ms');
+      
       console.time('[Calcifer] getMarkdownFiles');
       const files = this.app.vault.getMarkdownFiles()
         .filter(f => !this.shouldExclude(f.path));

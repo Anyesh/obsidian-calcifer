@@ -361,9 +361,10 @@ export class OllamaProvider implements AIProvider {
 
     console.log('[Calcifer] Using Obsidian requestUrl');
     
-    // Wrap requestUrl with timeout
+    // Wrap requestUrl with timeout that can be cleared
+    let timeoutId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.error(`[Calcifer] Request TIMEOUT after ${this.timeoutMs}ms`);
         reject(new Error(`Request timed out after ${this.timeoutMs}ms`));
       }, this.timeoutMs);
@@ -378,19 +379,24 @@ export class OllamaProvider implements AIProvider {
       body: JSON.stringify(body),
     };
 
-    console.log('[Calcifer] Calling requestUrl...');
-    const response = await Promise.race([requestUrl(params), timeoutPromise]);
-    console.log(`[Calcifer] requestUrl returned, status: ${response.status}`);
-    
-    if (response.status >= 400) {
-      throw new ProviderError(
-        `Request failed with status ${response.status}`,
-        httpStatusToErrorCode(response.status),
-        this.name
-      );
+    try {
+      console.log('[Calcifer] Calling requestUrl...');
+      const response = await Promise.race([requestUrl(params), timeoutPromise]);
+      console.log(`[Calcifer] requestUrl returned, status: ${response.status}`);
+      
+      if (response.status >= 400) {
+        throw new ProviderError(
+          `Request failed with status ${response.status}`,
+          httpStatusToErrorCode(response.status),
+          this.name
+        );
+      }
+      
+      return response.json as T;
+    } finally {
+      // Always clear the timeout to prevent phantom log messages
+      clearTimeout(timeoutId!);
     }
-    
-    return response.json as T;
   }
 
   /**
