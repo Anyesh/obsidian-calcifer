@@ -248,13 +248,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Ollama](https://ollama.ai) for local LLM hosting
 - The Obsidian plugin community for inspiration
 
-## Developer Documentation
-
-For AI agents and developers, see:
-- [AGENTS.md](./AGENTS.md) - AI agent instructions
-- [CALCIFER_SPEC.md](./CALCIFER_SPEC.md) - Technical specification
-- [docs/](./docs/) - Obsidian plugin development guides
-
 ---
 
 <p align="center">
