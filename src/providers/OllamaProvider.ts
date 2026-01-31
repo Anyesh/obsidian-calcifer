@@ -82,14 +82,16 @@ export class OllamaProvider implements AIProvider {
   private chatModel: string;
   private embeddingModel: string;
   private timeoutMs: number;
+  private useNativeFetch: boolean;
 
-  constructor(config: EndpointConfig, timeoutMs: number = 30000) {
+  constructor(config: EndpointConfig, timeoutMs: number = 30000, useNativeFetch: boolean = false) {
     this.id = config.id;
     this.name = config.name;
     this.baseUrl = config.baseUrl.replace(/\/$/, ''); // Remove trailing slash
     this.chatModel = config.chatModel;
     this.embeddingModel = config.embeddingModel;
     this.timeoutMs = timeoutMs;
+    this.useNativeFetch = useNativeFetch;
   }
 
   /**
@@ -168,23 +170,116 @@ export class OllamaProvider implements AIProvider {
 
   /**
    * Streaming chat completion
-   * Note: Obsidian's requestUrl doesn't support streaming directly,
-   * so we simulate it with non-streaming for now.
-   * TODO: Implement proper streaming with fetch API where available
+   * Uses native fetch API to parse Ollama's NDJSON stream
    */
   async chatStream(
     request: ChatRequest,
     onChunk: (chunk: ChatStreamChunk) => void
   ): Promise<ChatResponse> {
-    // For now, fall back to non-streaming and emit single chunk
-    const response = await this.chat(request);
+    // Ollama is typically local, so we can use fetch
+    // For mobile/restricted environments, fall back to non-streaming
+    if (typeof fetch === 'undefined') {
+      const response = await this.chat(request);
+      onChunk({ content: response.content, done: true });
+      return response;
+    }
+
+    const url = `${this.baseUrl}/api/chat`;
     
-    onChunk({
-      content: response.content,
-      done: true,
-    });
-    
-    return response;
+    const body = {
+      model: this.chatModel,
+      messages: request.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+      stream: true,
+      options: {
+        temperature: request.temperature ?? 0.7,
+        num_predict: request.maxTokens ?? 2048,
+      },
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        this.handleErrorResponse(response.status, errorBody);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new ProviderError('Response body is not readable', 'UNKNOWN', this.name);
+      }
+
+      const decoder = new TextDecoder();
+      let fullContent = '';
+      let buffer = '';
+      let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      let finishReason: 'stop' | 'length' = 'stop';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          onChunk({ content: '', done: true });
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          try {
+            const parsed = JSON.parse(line) as OllamaChatResponse;
+            
+            if (parsed.message?.content) {
+              fullContent += parsed.message.content;
+              onChunk({ content: parsed.message.content, done: false });
+            }
+
+            // Capture usage from final message
+            if (parsed.done) {
+              usage = {
+                promptTokens: parsed.prompt_eval_count ?? 0,
+                completionTokens: parsed.eval_count ?? 0,
+                totalTokens: (parsed.prompt_eval_count ?? 0) + (parsed.eval_count ?? 0),
+              };
+              finishReason = parsed.done_reason === 'length' ? 'length' : 'stop';
+              onChunk({ content: '', done: true });
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      return {
+        content: fullContent,
+        finishReason,
+        usage,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new ProviderError('Request timed out', 'TIMEOUT', this.name);
+      }
+      throw this.wrapError(error, 'chatStream');
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**
@@ -196,13 +291,19 @@ export class OllamaProvider implements AIProvider {
     // Ollama's /api/embed accepts single string or array
     const input = Array.isArray(request.input) ? request.input : [request.input];
     
+    console.log(`[Calcifer] OllamaProvider.embed: ${input.length} texts, model: ${request.model || this.embeddingModel}`);
+    console.log(`[Calcifer] OllamaProvider.embed: URL = ${url}`);
+    
     const body = {
       model: request.model || this.embeddingModel,
       input: input,
     };
 
     try {
+      console.time('[Calcifer] OllamaProvider HTTP request');
       const response = await this.request<OllamaEmbedResponse>(url, body);
+      console.timeEnd('[Calcifer] OllamaProvider HTTP request');
+      console.log(`[Calcifer] OllamaProvider.embed: got ${response.embeddings?.length} embeddings`);
       
       return {
         embeddings: response.embeddings,
@@ -213,6 +314,7 @@ export class OllamaProvider implements AIProvider {
         },
       };
     } catch (error) {
+      console.error('[Calcifer] OllamaProvider.embed FAILED:', error);
       throw this.wrapError(error, 'embed');
     }
   }
@@ -224,6 +326,11 @@ export class OllamaProvider implements AIProvider {
     const url = `${this.baseUrl}/api/tags`;
     
     try {
+      if (this.useNativeFetch) {
+        const data = await this.requestWithFetch<OllamaTagsResponse>(url, 'GET');
+        return data.models.map(m => m.name);
+      }
+
       const params: RequestUrlParam = {
         url,
         method: 'GET',
@@ -242,9 +349,26 @@ export class OllamaProvider implements AIProvider {
   }
 
   /**
-   * Make an HTTP request with proper error handling
+   * Make an HTTP request with proper error handling and timeout
    */
   private async request<T>(url: string, body: unknown): Promise<T> {
+    console.log(`[Calcifer] OllamaProvider.request: ${url}`);
+    
+    if (this.useNativeFetch) {
+      console.log('[Calcifer] Using native fetch');
+      return this.requestWithFetch<T>(url, 'POST', body);
+    }
+
+    console.log('[Calcifer] Using Obsidian requestUrl');
+    
+    // Wrap requestUrl with timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        console.error(`[Calcifer] Request TIMEOUT after ${this.timeoutMs}ms`);
+        reject(new Error(`Request timed out after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+    });
+
     const params: RequestUrlParam = {
       url,
       method: 'POST',
@@ -254,7 +378,9 @@ export class OllamaProvider implements AIProvider {
       body: JSON.stringify(body),
     };
 
-    const response = await requestUrl(params);
+    console.log('[Calcifer] Calling requestUrl...');
+    const response = await Promise.race([requestUrl(params), timeoutPromise]);
+    console.log(`[Calcifer] requestUrl returned, status: ${response.status}`);
     
     if (response.status >= 400) {
       throw new ProviderError(
@@ -265,6 +391,58 @@ export class OllamaProvider implements AIProvider {
     }
     
     return response.json as T;
+  }
+
+  /**
+   * Make request using native fetch API
+   */
+  private async requestWithFetch<T>(url: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const options: RequestInit = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+      };
+
+      if (body && method === 'POST') {
+        options.body = JSON.stringify(body);
+      }
+
+      const response = await fetch(url, options);
+      
+      if (response.status >= 400) {
+        throw new ProviderError(
+          `Request failed with status ${response.status}`,
+          httpStatusToErrorCode(response.status),
+          this.name
+        );
+      }
+
+      return await response.json() as T;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Handle HTTP error responses
+   */
+  private handleErrorResponse(status: number, body: unknown): never {
+    let message = `Request failed with status ${status}`;
+    
+    // Try to extract error message from Ollama's response
+    if (body && typeof body === 'object' && 'error' in body) {
+      message = (body as { error: string }).error || message;
+    }
+    
+    throw new ProviderError(
+      message,
+      httpStatusToErrorCode(status),
+      this.name
+    );
   }
 
   /**

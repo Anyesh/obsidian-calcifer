@@ -6,3 +6,4 @@
 
 export { ChatView, CHAT_VIEW_TYPE } from './ChatView';
 export { CalciferSettingsTab } from './SettingsTab';
+export { MemoryModal } from './MemoryModal';

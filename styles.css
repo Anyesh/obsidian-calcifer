@@ -147,6 +147,17 @@
   color: var(--text-muted);
 }
 
+/* Numeric input error state */
+.calcifer-input-error,
+.calcifer-input-error:focus {
+  border-color: var(--text-error);
+  background-color: rgba(var(--color-red-rgb), 0.05);
+}
+
+.calcifer-input-error:focus {
+  box-shadow: 0 0 0 2px rgba(var(--color-red-rgb), 0.2);
+}
+
 .calcifer-send-button {
   display: flex;
   align-items: center;
@@ -335,31 +346,46 @@
 
 .calcifer-folder-suggestion {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--size-4-1);
   padding: var(--size-4-2) var(--size-4-3);
   border-radius: var(--radius-s);
   cursor: pointer;
   transition: background-color 0.15s ease;
+  border: 1px solid var(--background-modifier-border);
+  margin-bottom: var(--size-4-2);
 }
 
 .calcifer-folder-suggestion:hover {
   background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
 }
 
 .calcifer-folder-path {
   display: flex;
   align-items: center;
-  gap: var(--size-4-2);
+  justify-content: space-between;
+  width: 100%;
+  font-weight: var(--font-medium);
+}
+
+.calcifer-folder-confidence {
+  font-size: var(--font-smaller);
+  font-weight: var(--font-normal);
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
+  padding: var(--size-2-1) var(--size-4-2);
+  border-radius: var(--radius-s);
 }
 
 .calcifer-folder-reason {
   font-size: var(--font-smaller);
   color: var(--text-muted);
-  max-width: 200px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
+}
+
+.calcifer-folder-modal-desc {
+  color: var(--text-muted);
+  margin-bottom: var(--size-4-2);
 }
 
 /* ============================================
@@ -372,8 +398,8 @@
 
 .calcifer-memory-item {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--size-4-1);
   padding: var(--size-4-2);
   border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -382,15 +408,93 @@
   border-bottom: none;
 }
 
+.calcifer-memory-item:hover {
+  background-color: var(--background-secondary);
+}
+
 .calcifer-memory-content {
   flex: 1;
   font-size: var(--font-small);
+  line-height: 1.4;
+}
+
+.calcifer-memory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
 }
 
 .calcifer-memory-date {
   font-size: var(--font-smallest);
   color: var(--text-muted);
+}
+
+.calcifer-memory-source {
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+}
+
+.calcifer-memory-item-actions {
+  display: flex;
+  gap: var(--size-4-2);
   margin-top: var(--size-4-1);
+}
+
+.calcifer-memory-btn {
+  padding: 2px 8px;
+  font-size: var(--font-smallest);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.calcifer-memory-btn:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.calcifer-memory-btn-danger {
+  color: var(--text-error);
+}
+
+.calcifer-memory-btn-danger:hover {
+  background-color: var(--background-modifier-error);
+}
+
+.calcifer-memory-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: var(--size-4-4);
+}
+
+.calcifer-memory-actions {
+  margin-bottom: var(--size-4-3);
+}
+
+.calcifer-memory-stats {
+  margin-top: var(--size-4-3);
+  padding-top: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+  text-align: center;
+}
+
+.calcifer-memory-stats-text {
+  font-size: var(--font-smaller);
+  color: var(--text-muted);
+}
+
+.calcifer-memory-description {
+  color: var(--text-muted);
+  margin-bottom: var(--size-4-3);
+}
+
+.calcifer-memory-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
 }
 
 .calcifer-memory-delete {
@@ -500,5 +604,72 @@
   
   .calcifer-input {
     border-width: 2px;
+  }
+}
+
+/* ============================================
+   Status Bar Item
+   ============================================ */
+.calcifer-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: var(--radius-s);
+  transition: background-color 0.15s ease;
+}
+
+.calcifer-status:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.calcifer-status-icon {
+  display: flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.calcifer-status-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.calcifer-status-text {
+  font-size: var(--font-smallest);
+}
+
+.calcifer-status-busy .calcifer-status-icon {
+  color: var(--text-accent);
+}
+
+.calcifer-status-error .calcifer-status-icon {
+  color: var(--text-error);
+}
+
+/* Spinning animation for loader */
+.calcifer-spin {
+  animation: calcifer-spin 1s linear infinite;
+}
+
+@keyframes calcifer-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion for status */
+@media (prefers-reduced-motion: reduce) {
+  .calcifer-spin {
+    animation: calcifer-pulse 1.5s ease-in-out infinite;
+  }
+  
+  @keyframes calcifer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 }

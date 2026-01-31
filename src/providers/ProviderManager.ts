@@ -78,12 +78,13 @@ export class ProviderManager {
    */
   private createProvider(config: EndpointConfig): AIProvider {
     const timeoutMs = this.settings.requestTimeoutMs;
+    const useNativeFetch = this.settings.useNativeFetch;
     
     switch (config.type) {
       case 'ollama':
-        return new OllamaProvider(config, timeoutMs);
+        return new OllamaProvider(config, timeoutMs, useNativeFetch);
       case 'openai':
-        return new OpenAIProvider(config, timeoutMs);
+        return new OpenAIProvider(config, timeoutMs, useNativeFetch);
       default:
         throw new Error(`Unknown provider type: ${config.type}`);
     }
@@ -239,6 +240,7 @@ export class ProviderManager {
    */
   async embed(request: EmbeddingRequest): Promise<EmbeddingResponse> {
     const providers = this.getSortedProviders();
+    console.log(`[Calcifer] ProviderManager.embed: ${providers.length} providers available`);
     
     if (providers.length === 0) {
       throw new ProviderError(
@@ -252,7 +254,11 @@ export class ProviderManager {
     
     for (const provider of providers) {
       try {
+        console.log(`[Calcifer] Trying provider: ${provider.name}`);
+        console.time(`[Calcifer] Provider ${provider.name} embed`);
         const response = await provider.embed(request);
+        console.timeEnd(`[Calcifer] Provider ${provider.name} embed`);
+        console.log(`[Calcifer] Provider ${provider.name} SUCCESS`);
         return response;
       } catch (error) {
         console.warn(`Provider ${provider.name} embed failed:`, error);

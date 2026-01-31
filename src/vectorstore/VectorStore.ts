@@ -130,7 +130,14 @@ export class VectorStore {
       const request = store.put(doc);
 
       request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error(`Failed to upsert: ${request.error?.message}`));
+      request.onerror = () => {
+        const error = request.error;
+        if (error?.name === 'QuotaExceededError') {
+          reject(new Error('Storage quota exceeded. Try clearing the embedding index.'));
+        } else {
+          reject(new Error(`Failed to upsert: ${error?.message}`));
+        }
+      };
     });
   }
 
@@ -139,6 +146,7 @@ export class VectorStore {
    */
   async upsertBatch(docs: VectorDocument[]): Promise<void> {
     this.ensureInitialized();
+    console.log(`[Calcifer] VectorStore.upsertBatch: ${docs.length} docs`);
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -146,6 +154,19 @@ export class VectorStore {
 
       let completed = 0;
       let hasError = false;
+      
+      // Handle transaction-level errors (including quota)
+      transaction.onerror = () => {
+        if (!hasError) {
+          hasError = true;
+          const error = transaction.error;
+          if (error?.name === 'QuotaExceededError') {
+            reject(new Error('Storage quota exceeded. Try clearing the embedding index.'));
+          } else {
+            reject(new Error(`Transaction failed: ${error?.message}`));
+          }
+        }
+      };
 
       for (const doc of docs) {
         const request = store.put(doc);
@@ -262,19 +283,56 @@ export class VectorStore {
   }
 
   /**
-   * Update file path for renamed files
+   * Update file path for renamed files - atomic transaction
    */
   async updatePath(oldPath: string, newPath: string): Promise<void> {
+    this.ensureInitialized();
+    
     const docs = await this.getByPath(oldPath);
+    if (docs.length === 0) return;
     
-    for (const doc of docs) {
-      doc.path = newPath;
-      doc.id = `${newPath}#${doc.chunkIndex}`;
-      await this.upsert(doc);
-    }
-    
-    // Delete old entries
-    await this.deleteByPath(oldPath);
+    // Use a single transaction for atomicity
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      let completed = 0;
+      const totalOps = docs.length * 2; // delete old + add new for each doc
+      let hasError = false;
+      
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => {
+        if (!hasError) {
+          hasError = true;
+          reject(new Error(`Failed to update path: ${transaction.error?.message}`));
+        }
+      };
+      transaction.onabort = () => {
+        if (!hasError) {
+          hasError = true;
+          reject(new Error('Transaction aborted'));
+        }
+      };
+      
+      for (const doc of docs) {
+        // Delete old entry
+        const deleteRequest = store.delete(doc.id);
+        deleteRequest.onsuccess = () => {
+          completed++;
+        };
+        
+        // Create new entry with updated path
+        const newDoc = {
+          ...doc,
+          path: newPath,
+          id: `${newPath}#${doc.chunkIndex}`,
+        };
+        const addRequest = store.put(newDoc);
+        addRequest.onsuccess = () => {
+          completed++;
+        };
+      }
+    });
   }
 
   /**
@@ -311,28 +369,71 @@ export class VectorStore {
 
   /**
    * Search for similar documents using cosine similarity
+   * Processes in batches to prevent UI freezing
    */
   async search(
     queryEmbedding: number[],
     topK: number = 5,
     minScore: number = 0
   ): Promise<SearchResult[]> {
-    const allDocs = await this.getAll();
+    this.ensureInitialized();
     
-    // Calculate similarity scores
+    // Get all documents in batches to prevent memory issues with large vaults
+    const allDocs = await this.getAllInBatches(500);
+    
     const results: SearchResult[] = [];
+    const BATCH_SIZE = 100;
     
-    for (const doc of allDocs) {
-      const score = cosineSimilarity(queryEmbedding, doc.embedding);
+    for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
+      const batch = allDocs.slice(i, i + BATCH_SIZE);
       
-      if (score >= minScore) {
-        results.push({ document: doc, score });
+      for (const doc of batch) {
+        const score = cosineSimilarity(queryEmbedding, doc.embedding);
+        
+        if (score >= minScore) {
+          // Keep only top K results using min-heap logic
+          if (results.length < topK) {
+            results.push({ document: doc, score });
+            results.sort((a, b) => a.score - b.score); // Keep sorted ascending
+          } else if (score > results[0].score) {
+            results[0] = { document: doc, score };
+            results.sort((a, b) => a.score - b.score);
+          }
+        }
+      }
+      
+      // Yield to UI between batches
+      if (i + BATCH_SIZE < allDocs.length) {
+        await this.yieldToUI();
       }
     }
     
-    // Sort by score descending and take top K
+    // Return results sorted descending
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    return results;
+  }
+
+  /**
+   * Get all documents in batches to allow UI updates
+   */
+  private async getAllInBatches(batchSize: number): Promise<VectorDocument[]> {
+    this.ensureInitialized();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+      
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(new Error(`Failed to getAll: ${request.error?.message}`));
+    });
+  }
+
+  /**
+   * Yield to UI to prevent freezing during search
+   */
+  private yieldToUI(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
   }
 
   /**
@@ -345,21 +446,46 @@ export class VectorStore {
     minScore: number = 0
   ): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
+    const pathSet = new Set(filePaths);
     
-    for (const path of filePaths) {
-      const docs = await this.getByPath(path);
+    this.ensureInitialized();
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.openCursor();
       
-      for (const doc of docs) {
-        const score = cosineSimilarity(queryEmbedding, doc.embedding);
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         
-        if (score >= minScore) {
-          results.push({ document: doc, score });
+        if (cursor) {
+          const doc = cursor.value as VectorDocument;
+          
+          if (pathSet.has(doc.path)) {
+            const score = cosineSimilarity(queryEmbedding, doc.embedding);
+            
+            if (score >= minScore) {
+              if (results.length < topK) {
+                results.push({ document: doc, score });
+                results.sort((a, b) => a.score - b.score);
+              } else if (score > results[0].score) {
+                results[0] = { document: doc, score };
+                results.sort((a, b) => a.score - b.score);
+              }
+            }
+          }
+          
+          cursor.continue();
+        } else {
+          results.sort((a, b) => b.score - a.score);
+          resolve(results);
         }
-      }
-    }
-    
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+      };
+      
+      request.onerror = () => {
+        reject(new Error(`Search in files failed: ${request.error?.message}`));
+      };
+    });
   }
 
   /**
@@ -383,6 +509,46 @@ export class VectorStore {
   async getIndexedPaths(): Promise<Set<string>> {
     const allDocs = await this.getAll();
     return new Set(allDocs.map(d => d.path));
+  }
+
+  /**
+   * Get indexed file paths with their latest mtime
+   * Used for efficient batch reindex checking
+   */
+  async getIndexedPathsWithMtime(): Promise<Map<string, number>> {
+    this.ensureInitialized();
+    
+    console.time('[Calcifer] VectorStore.getIndexedPathsWithMtime');
+    const pathMtimes = new Map<string, number>();
+    let docCount = 0;
+    
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.openCursor();
+      
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        
+        if (cursor) {
+          docCount++;
+          const doc = cursor.value as VectorDocument;
+          const existingMtime = pathMtimes.get(doc.path) || 0;
+          if (doc.mtime > existingMtime) {
+            pathMtimes.set(doc.path, doc.mtime);
+          }
+          cursor.continue();
+        } else {
+          console.timeEnd('[Calcifer] VectorStore.getIndexedPathsWithMtime');
+          console.log(`[Calcifer] VectorStore: scanned ${docCount} docs, ${pathMtimes.size} unique paths`);
+          resolve(pathMtimes);
+        }
+      };
+      
+      request.onerror = () => {
+        reject(new Error(`Failed to get indexed paths: ${request.error?.message}`));
+      };
+    });
   }
 
   /**

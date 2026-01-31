@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
   "description": "AI-powered assistant with RAG, chat, auto-tagging, note organization, and memory for your vault.",
-  "author": "Your Name",
-  "authorUrl": "https://github.com/yourusername",
+  "author": "Calcifer Team",
+  "authorUrl": "https://github.com/calcifer-plugin",
   "isDesktopOnly": false,
   "fundingUrl": ""
 }

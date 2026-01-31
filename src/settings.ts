@@ -105,8 +105,6 @@ export interface CalciferSettings {
   showContextSources: boolean;
   /** Show indexing progress notifications */
   showIndexingProgress: boolean;
-  /** Theme variant */
-  theme: 'auto' | 'light' | 'dark';
   
   // === Performance Settings ===
   /** Enable on mobile devices */
@@ -115,6 +113,8 @@ export interface CalciferSettings {
   rateLimitRpm: number;
   /** Request timeout (ms) */
   requestTimeoutMs: number;
+  /** Use native fetch instead of Obsidian's requestUrl (for internal CAs) */
+  useNativeFetch: boolean;
 }
 
 /**
@@ -124,10 +124,10 @@ export const DEFAULT_SETTINGS: CalciferSettings = {
   // Endpoints - empty by default, user must configure
   endpoints: [],
   
-  // Embedding
-  enableEmbedding: true,
-  embeddingBatchSize: 10,
-  embeddingDebounceMs: 2000,
+  // Embedding - DISABLED by default until provider is configured and tested
+  enableEmbedding: false,
+  embeddingBatchSize: 1,
+  embeddingDebounceMs: 5000,
   chunkSize: 1000,
   chunkOverlap: 200,
   embeddingExclude: [
@@ -176,12 +176,12 @@ Be concise but thorough. Format responses in Markdown when helpful.`,
   // UI
   showContextSources: true,
   showIndexingProgress: true,
-  theme: 'auto',
   
   // Performance
   enableOnMobile: true,
   rateLimitRpm: 60,
-  requestTimeoutMs: 30000,
+  requestTimeoutMs: 120000,
+  useNativeFetch: false,
 };
 
 /**
@@ -198,11 +198,13 @@ export function validateSettings(settings: CalciferSettings): string[] {
   for (const endpoint of settings.endpoints) {
     if (!endpoint.baseUrl) {
       errors.push(`Endpoint "${endpoint.name}": Base URL is required`);
+    } else if (!isValidUrl(endpoint.baseUrl)) {
+      errors.push(`Endpoint "${endpoint.name}": Base URL is not a valid URL`);
     }
-    if (!endpoint.chatModel) {
+    if (!endpoint.chatModel || endpoint.chatModel.trim() === '') {
       errors.push(`Endpoint "${endpoint.name}": Chat model is required`);
     }
-    if (!endpoint.embeddingModel) {
+    if (!endpoint.embeddingModel || endpoint.embeddingModel.trim() === '') {
       errors.push(`Endpoint "${endpoint.name}": Embedding model is required`);
     }
     if (endpoint.type === 'openai' && !endpoint.apiKey) {
@@ -211,23 +213,58 @@ export function validateSettings(settings: CalciferSettings): string[] {
   }
   
   // Validate numeric ranges
-  if (settings.chunkSize < 100 || settings.chunkSize > 10000) {
+  if (!Number.isFinite(settings.chunkSize) || settings.chunkSize < 100 || settings.chunkSize > 10000) {
     errors.push('Chunk size must be between 100 and 10000');
   }
-  if (settings.chunkOverlap >= settings.chunkSize) {
-    errors.push('Chunk overlap must be less than chunk size');
+  if (!Number.isFinite(settings.chunkOverlap) || settings.chunkOverlap < 0 || settings.chunkOverlap >= settings.chunkSize) {
+    errors.push('Chunk overlap must be between 0 and less than chunk size');
   }
-  if (settings.ragTopK < 1 || settings.ragTopK > 20) {
+  if (!Number.isFinite(settings.ragTopK) || settings.ragTopK < 1 || settings.ragTopK > 20) {
     errors.push('RAG top K must be between 1 and 20');
   }
-  if (settings.ragMinScore < 0 || settings.ragMinScore > 1) {
+  if (!Number.isFinite(settings.ragMinScore) || settings.ragMinScore < 0 || settings.ragMinScore > 1) {
     errors.push('RAG min score must be between 0 and 1');
   }
-  if (settings.chatTemperature < 0 || settings.chatTemperature > 2) {
+  if (!Number.isFinite(settings.chatTemperature) || settings.chatTemperature < 0 || settings.chatTemperature > 2) {
     errors.push('Chat temperature must be between 0 and 2');
+  }
+  if (!Number.isFinite(settings.rateLimitRpm) || settings.rateLimitRpm < 1 || settings.rateLimitRpm > 1000) {
+    errors.push('Rate limit must be between 1 and 1000 RPM');
+  }
+  if (!Number.isFinite(settings.requestTimeoutMs) || settings.requestTimeoutMs < 5000 || settings.requestTimeoutMs > 300000) {
+    errors.push('Request timeout must be between 5 and 300 seconds');
   }
   
   return errors;
+}
+
+/**
+ * Validate a URL string
+ */
+function isValidUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sanitize endpoint config to ensure valid values
+ */
+export function sanitizeEndpointConfig(config: Partial<EndpointConfig>): EndpointConfig {
+  return {
+    id: config.id || generateEndpointId(),
+    name: (config.name || 'Unnamed').trim().slice(0, 50),
+    type: config.type === 'openai' ? 'openai' : 'ollama',
+    baseUrl: (config.baseUrl || '').trim(),
+    apiKey: config.apiKey?.trim() || '',
+    chatModel: (config.chatModel || '').trim(),
+    embeddingModel: (config.embeddingModel || '').trim(),
+    enabled: config.enabled ?? true,
+    priority: Math.max(0, Math.floor(config.priority || 0)),
+  };
 }
 
 /**
@@ -245,5 +282,5 @@ export function getActiveEndpoint(settings: CalciferSettings): EndpointConfig | 
  * Generate a unique endpoint ID
  */
 export function generateEndpointId(): string {
-  return `ep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `ep_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }

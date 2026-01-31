@@ -8,42 +8,42 @@
 
 Calcifer is an intelligent AI assistant that integrates deeply with your Obsidian vault. Using RAG (Retrieval-Augmented Generation), it understands your notes and provides contextual answers, auto-tagging, organization suggestions, and persistent memory.
 
-## ✨ Features
+## Features
 
-### 🤖 AI Chat with Vault Context
+### AI Chat with Vault Context
 - Chat interface in the right sidebar
 - Retrieves relevant notes as context for answers
 - Shows sources for every response
 - Supports Ollama and OpenAI-compatible APIs
 
-### 🏷️ Auto-Tagging
+### Auto-Tagging
 - Suggests tags based on note content
 - Uses existing vault tags as reference
 - Configurable auto-apply or suggest-only mode
 
-### 📁 Note Organization
+### Note Organization
 - Suggests appropriate folders for notes
 - Based on content similarity to existing notes
 - LLM-enhanced folder recommendations
 
-### 🧠 Memory System
+### Memory System
 - Remembers facts about you across conversations
 - Stored locally in plugin data (not sent to cloud)
 - Manageable through settings
 
-### 🔍 Semantic Search
+### Semantic Search
 - Full vault indexing with embeddings
 - Find notes by meaning, not just keywords
 - Automatic re-indexing on file changes
 
-## 📋 Requirements
+## Requirements
 
 - Obsidian v1.0.0 or higher
 - An AI API endpoint (one of the following):
   - **Ollama** (local or remote)
   - **OpenAI** (or compatible API like Azure OpenAI, Anthropic, etc.)
 
-## 🚀 Installation
+## Installation
 
 ### From Community Plugins (Coming Soon)
 1. Open Settings → Community plugins
@@ -56,7 +56,7 @@ Calcifer is an intelligent AI assistant that integrates deeply with your Obsidia
 3. Copy the downloaded files into the folder
 4. Enable the plugin in Settings → Community plugins
 
-## ⚙️ Configuration
+## Configuration
 
 ### 1. Add an API Endpoint
 
@@ -89,10 +89,10 @@ Embedding Model: text-embedding-3-small
 
 ### 3. Start Chatting
 
-- Click the 🤖 icon in the left ribbon
+- Click the icon in the left ribbon
 - Or use command: **Calcifer: Open Chat**
 
-## 🎮 Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
@@ -104,7 +104,7 @@ Embedding Model: text-embedding-3-small
 | Suggest Tags for Current Note | Get AI tag suggestions |
 | Suggest Folder for Current Note | Get folder placement suggestions |
 
-## 🔧 Settings Reference
+## Settings Reference
 
 ### Embedding Settings
 - **Enable Embedding**: Toggle automatic indexing
@@ -148,21 +148,21 @@ Embedding Model: text-embedding-3-small
 - **Rate Limit (RPM)**: API requests per minute (default: 60)
 - **Request Timeout**: Seconds before timeout (default: 30)
 
-## 📱 Mobile Support
+## Mobile Support
 
 Calcifer is fully functional on mobile devices:
 - Chat interface optimized for touch
 - Background indexing respects mobile resources
 - All features work offline with local Ollama
 
-## 🔒 Privacy & Security
+## Privacy & Security
 
 - **Local Processing**: All embeddings stored locally in IndexedDB
 - **No Cloud Storage**: Plugin data never leaves your device
 - **API Choice**: Use local Ollama for complete privacy
 - **Memory Control**: View and delete any stored memories
 
-## 🛠️ Development
+## Development
 
 ```bash
 # Clone the repository
@@ -216,7 +216,7 @@ calcifer/
         └── logger.ts
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "No provider configured"
 - Add at least one API endpoint in settings
@@ -238,17 +238,17 @@ calcifer/
 - Lower the minimum score threshold
 - Increase Top K for more context
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Obsidian](https://obsidian.md) for the amazing note-taking platform
 - [Ollama](https://ollama.ai) for local LLM hosting
 - The Obsidian plugin community for inspiration
 
-## 📚 Developer Documentation
+## Developer Documentation
 
 For AI agents and developers, see:
 - [AGENTS.md](./AGENTS.md) - AI agent instructions

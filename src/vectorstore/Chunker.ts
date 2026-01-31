@@ -179,8 +179,16 @@ function chunkSection(
   }
   
   let startPos = 0;
+  let lastStartPos = -1; // Track to prevent infinite loops
   
   while (startPos < text.length) {
+    // Prevent infinite loop - if startPos didn't advance, break
+    if (startPos === lastStartPos) {
+      console.warn('[Calcifer] Chunker: breaking infinite loop at startPos', startPos);
+      break;
+    }
+    lastStartPos = startPos;
+    
     let endPos = Math.min(startPos + chunkSize, text.length);
     
     // Try to find a good break point (sentence or paragraph boundary)
@@ -207,10 +215,18 @@ function chunkSection(
     }
     
     // Move to next chunk with overlap
-    startPos = endPos - overlap;
+    const nextStartPos = endPos - overlap;
     
-    // Prevent infinite loop
-    if (startPos >= text.length - minChunkSize) {
+    // Ensure we always make forward progress
+    // If overlap would send us backwards or not far enough forward, just continue from endPos
+    if (nextStartPos <= startPos) {
+      startPos = endPos;
+    } else {
+      startPos = nextStartPos;
+    }
+    
+    // If we've reached the end, break
+    if (endPos >= text.length) {
       break;
     }
   }

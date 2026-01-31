@@ -122,12 +122,27 @@ export class RAGPipeline {
         this.settings.ragMinScore
       );
       
-      // Convert to context chunks
-      return results.map(r => ({
-        content: r.document.content,
-        source: r.document.path,
-        score: r.score,
-      }));
+      // Convert to context chunks with optional frontmatter
+      return results.map(r => {
+        let content = r.document.content;
+        
+        // Include frontmatter metadata if enabled
+        if (this.settings.ragIncludeFrontmatter && r.document.metadata) {
+          const metaStr = Object.entries(r.document.metadata)
+            .filter(([_, v]) => v !== null && v !== undefined)
+            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .join('\n');
+          if (metaStr) {
+            content = `---\n${metaStr}\n---\n\n${content}`;
+          }
+        }
+        
+        return {
+          content,
+          source: r.document.path,
+          score: r.score,
+        };
+      });
       
     } catch (error) {
       console.error('Failed to retrieve context:', error);
@@ -253,8 +268,8 @@ Response format: ["memory 1", "memory 2"] or []`;
           }
         }
       } catch (error) {
-        // Silently fail memory extraction
-        console.debug('Memory extraction failed:', error);
+        // Log memory extraction failures for debugging
+        console.warn('[Calcifer] Memory extraction failed:', error instanceof Error ? error.message : error);
       }
     }
   }

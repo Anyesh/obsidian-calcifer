@@ -32,6 +32,11 @@ export class AutoTagger {
   private tagQueue: Set<string> = new Set();
   private processQueue: () => void;
   private isProcessing = false;
+  
+  // Circuit breaker
+  private consecutiveErrors = 0;
+  private maxConsecutiveErrors = 3;
+  private circuitBroken = false;
 
   constructor(
     app: App,
@@ -55,9 +60,27 @@ export class AutoTagger {
    */
   queueFile(path: string): void {
     if (!this.settings.enableAutoTag) return;
+    if (this.circuitBroken) return;
     
     this.tagQueue.add(path);
     this.processQueue();
+  }
+  
+  /**
+   * Reset circuit breaker
+   */
+  resetCircuitBreaker(): void {
+    this.circuitBroken = false;
+    this.consecutiveErrors = 0;
+  }
+
+  /**
+   * Update settings
+   */
+  updateSettings(settings: CalciferSettings): void {
+    this.settings = settings;
+    // Reset circuit breaker when settings change
+    this.resetCircuitBreaker();
   }
 
   /**
@@ -90,15 +113,29 @@ export class AutoTagger {
         maxTokens: 200,
       });
       
-      // Parse response
+      // Parse response safely
       const match = response.content.match(/\[[\s\S]*\]/);
       if (!match) return [];
       
-      const suggestions = JSON.parse(match[0]) as TagSuggestion[];
+      let suggestions: TagSuggestion[];
+      try {
+        suggestions = JSON.parse(match[0]) as TagSuggestion[];
+      } catch (parseError) {
+        console.error('Failed to parse tag suggestions:', parseError);
+        return [];
+      }
       
-      // Filter and sort by confidence
+      // Validate and filter suggestions
+      if (!Array.isArray(suggestions)) return [];
+      
       return suggestions
-        .filter(s => s.confidence >= 0.3)
+        .filter(s => 
+          typeof s.tag === 'string' && 
+          typeof s.confidence === 'number' &&
+          s.confidence >= 0.3 &&
+          s.tag.length > 0 &&
+          s.tag.length < 100
+        )
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, this.settings.maxTagSuggestions);
         
@@ -131,22 +168,30 @@ export class AutoTagger {
   }
 
   /**
-   * Get all tags used in the vault
+   * Get all tags used in the vault (cached, limited)
    */
   private getVaultTags(): string[] {
     const tags = new Set<string>();
-    
-    // Get tags from metadata cache
     const cache = this.app.metadataCache;
+    const files = this.app.vault.getMarkdownFiles();
     
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const fileTags = cache.getFileCache(file)?.tags || [];
+    // Limit iteration to prevent freezing on large vaults
+    const maxFilesToScan = 500;
+    const filesToScan = files.slice(0, maxFilesToScan);
+    
+    for (const file of filesToScan) {
+      // Get tags from cache (fast, doesn't read file)
+      const fileCache = cache.getFileCache(file);
+      if (!fileCache) continue;
+      
+      const fileTags = fileCache.tags || [];
       for (const tagInfo of fileTags) {
         tags.add(tagInfo.tag.replace(/^#/, ''));
+        if (tags.size >= 100) break; // Limit total tags
       }
       
       // Also check frontmatter
-      const frontmatter = cache.getFileCache(file)?.frontmatter;
+      const frontmatter = fileCache.frontmatter;
       if (frontmatter?.tags) {
         const fmTags = Array.isArray(frontmatter.tags) 
           ? frontmatter.tags 
@@ -154,9 +199,12 @@ export class AutoTagger {
         for (const tag of fmTags) {
           if (typeof tag === 'string') {
             tags.add(tag.replace(/^#/, ''));
+            if (tags.size >= 100) break;
           }
         }
       }
+      
+      if (tags.size >= 100) break;
     }
     
     return Array.from(tags);
@@ -192,10 +240,14 @@ Important:
   }
 
   /**
-   * Process queued files
+   * Process queued files with circuit breaker
    */
   private async processTagQueue(): Promise<void> {
     if (this.isProcessing || this.tagQueue.size === 0) return;
+    if (this.circuitBroken) {
+      this.tagQueue.clear();
+      return;
+    }
     
     this.isProcessing = true;
     
@@ -204,11 +256,17 @@ Important:
       this.tagQueue.clear();
       
       for (const path of paths) {
+        if (this.circuitBroken) break;
+        
         const file = this.app.vault.getFileByPath(path);
         if (!(file instanceof TFile)) continue;
         
+        // Yield to UI between files
+        await this.yieldToUI();
+        
         try {
           const suggestions = await this.suggestTags(file);
+          this.consecutiveErrors = 0; // Reset on success
           
           if (suggestions.length === 0) continue;
           
@@ -229,15 +287,35 @@ Important:
           }
         } catch (error) {
           console.error(`Failed to tag ${path}:`, error);
+          this.consecutiveErrors++;
+          
+          if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+            this.circuitBroken = true;
+            console.warn('[Calcifer] Auto-tagging circuit breaker triggered');
+            break;
+          }
         }
       }
     } finally {
       this.isProcessing = false;
       
-      // Process any files added during processing
-      if (this.tagQueue.size > 0) {
+      // Process any files added during processing (only if circuit not broken)
+      if (this.tagQueue.size > 0 && !this.circuitBroken) {
         this.processQueue();
       }
     }
+  }
+  
+  /**
+   * Yield to UI
+   */
+  private yieldToUI(): Promise<void> {
+    return new Promise(resolve => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => resolve(), { timeout: 50 });
+      } else {
+        setTimeout(resolve, 10);
+      }
+    });
   }
 }

@@ -41,6 +41,13 @@ export class NoteOrganizer {
   }
 
   /**
+   * Update settings
+   */
+  updateSettings(settings: CalciferSettings): void {
+    this.settings = settings;
+  }
+
+  /**
    * Suggest a folder for a file
    */
   async suggestFolder(file: TFile): Promise<void> {

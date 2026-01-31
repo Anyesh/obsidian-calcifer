@@ -12,6 +12,7 @@ import {
   generateEndpointId,
   validateSettings 
 } from '@/settings';
+import { MemoryModal } from './MemoryModal';
 
 /**
  * Calcifer Settings Tab
@@ -23,6 +24,54 @@ export class CalciferSettingsTab extends PluginSettingTab {
   constructor(app: App, plugin: CalciferPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  /**
+   * Create a validated numeric input with visual feedback
+   */
+  private createNumericSetting(
+    containerEl: HTMLElement,
+    name: string,
+    desc: string,
+    currentValue: number,
+    options: {
+      min?: number;
+      max?: number;
+      step?: number;
+      placeholder?: string;
+    },
+    onValidChange: (value: number) => Promise<void>
+  ): Setting {
+    const { min = 0, max = Infinity, placeholder = '' } = options;
+    
+    return new Setting(containerEl)
+      .setName(name)
+      .setDesc(desc)
+      .addText(text => {
+        text
+          .setValue(String(currentValue))
+          .setPlaceholder(placeholder)
+          .onChange(async (value) => {
+            const num = parseInt(value, 10);
+            const inputEl = text.inputEl;
+            
+            if (isNaN(num) || num < min || num > max) {
+              inputEl.addClass('calcifer-input-error');
+              inputEl.setAttribute('aria-invalid', 'true');
+              return;
+            }
+            
+            inputEl.removeClass('calcifer-input-error');
+            inputEl.removeAttribute('aria-invalid');
+            await onValidChange(num);
+          });
+        
+        // Add number type hint
+        text.inputEl.setAttribute('inputmode', 'numeric');
+        text.inputEl.setAttribute('pattern', '[0-9]*');
+        
+        return text;
+      });
   }
 
   display(): void {
@@ -337,33 +386,29 @@ export class CalciferSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName('Chunk Size')
-      .setDesc('Characters per text chunk for embedding')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.chunkSize))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num >= 100 && num <= 10000) {
-            this.plugin.settings.chunkSize = num;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
+    this.createNumericSetting(
+      containerEl,
+      'Chunk Size',
+      'Characters per text chunk for embedding (100-10000)',
+      this.plugin.settings.chunkSize,
+      { min: 100, max: 10000, placeholder: '1000' },
+      async (value) => {
+        this.plugin.settings.chunkSize = value;
+        await this.plugin.saveSettings();
+      }
+    );
 
-    new Setting(containerEl)
-      .setName('Chunk Overlap')
-      .setDesc('Overlap between chunks to maintain context')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.chunkOverlap))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num >= 0) {
-            this.plugin.settings.chunkOverlap = num;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
+    this.createNumericSetting(
+      containerEl,
+      'Chunk Overlap',
+      'Overlap between chunks to maintain context (0+)',
+      this.plugin.settings.chunkOverlap,
+      { min: 0, max: 1000, placeholder: '200' },
+      async (value) => {
+        this.plugin.settings.chunkOverlap = value;
+        await this.plugin.saveSettings();
+      }
+    );
 
     new Setting(containerEl)
       .setName('Exclude Patterns')
@@ -423,19 +468,17 @@ export class CalciferSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName('Max Context Length')
-      .setDesc('Maximum total context length in characters')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.ragMaxContextLength))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num > 0) {
-            this.plugin.settings.ragMaxContextLength = num;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
+    this.createNumericSetting(
+      containerEl,
+      'Max Context Length',
+      'Maximum total context length in characters (1000+)',
+      this.plugin.settings.ragMaxContextLength,
+      { min: 1000, max: 100000, placeholder: '8000' },
+      async (value) => {
+        this.plugin.settings.ragMaxContextLength = value;
+        await this.plugin.saveSettings();
+      }
+    );
   }
 
   /**
@@ -492,19 +535,17 @@ export class CalciferSettingsTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName('Max Tokens')
-      .setDesc('Maximum tokens in response')
-      .addText(text => text
-        .setValue(String(this.plugin.settings.chatMaxTokens))
-        .onChange(async (value) => {
-          const num = parseInt(value);
-          if (!isNaN(num) && num > 0) {
-            this.plugin.settings.chatMaxTokens = num;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
+    this.createNumericSetting(
+      containerEl,
+      'Max Tokens',
+      'Maximum tokens in response (100+)',
+      this.plugin.settings.chatMaxTokens,
+      { min: 100, max: 100000, placeholder: '2048' },
+      async (value) => {
+        this.plugin.settings.chatMaxTokens = value;
+        await this.plugin.saveSettings();
+      }
+    );
   }
 
   /**
@@ -555,8 +596,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       .addButton(button => button
         .setButtonText('View & Manage')
         .onClick(() => {
-          // TODO: Open memory management modal
-          new Notice('Memory management modal coming soon');
+          new MemoryModal(this.app, this.plugin.memoryManager).open();
         })
       );
   }
@@ -742,6 +782,19 @@ export class CalciferSettingsTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.requestTimeoutMs = value * 1000;
           await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Use Native Fetch')
+      .setDesc('Use native fetch API instead of Obsidian requestUrl. Enable this if you have connection issues with internal/self-signed certificates.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.useNativeFetch)
+        .onChange(async (value) => {
+          this.plugin.settings.useNativeFetch = value;
+          await this.plugin.saveSettings();
+          // Reinitialize providers with new setting
+          this.plugin.providerManager?.updateSettings(this.plugin.settings);
         })
       );
   }

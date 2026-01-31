@@ -10,6 +10,20 @@ import type CalciferPlugin from '@/../main';
 import type { ChatMessage as ProviderMessage } from '@/providers/types';
 
 export const CHAT_VIEW_TYPE = 'calcifer-chat-view';
+const CHAT_HISTORY_KEY = 'calcifer-chat-history';
+const MAX_PERSISTED_MESSAGES = 50;
+
+/**
+ * Serializable chat message for persistence
+ */
+interface PersistedMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  contextSources?: string[];
+  isError?: boolean;
+}
 
 /**
  * Chat message for display
@@ -66,14 +80,18 @@ export class ChatView extends ItemView {
     this.createInputArea(container as HTMLElement);
     this.createStatusBar(container as HTMLElement);
 
-    // Add welcome message
-    this.addSystemMessage(
-      "Hello! I'm Calcifer, your AI assistant. I have access to your vault and can help you find information, organize notes, and more. What would you like to know?"
-    );
+    // Load persisted messages or show welcome
+    const loaded = await this.loadMessages();
+    if (!loaded || this.messages.length === 0) {
+      this.addSystemMessage(
+        "Hello! I'm Calcifer, your AI assistant. I have access to your vault and can help you find information, organize notes, and more. What would you like to know?"
+      );
+    }
   }
 
   async onClose(): Promise<void> {
-    // Cleanup
+    // Save messages on close
+    await this.saveMessages();
   }
 
   /**
@@ -217,6 +235,7 @@ export class ChatView extends ItemView {
     this.isProcessing = true;
     this.sendButton.disabled = true;
     this.sendButton.setText('...');
+    this.plugin.setStatusChatting(true);
 
     // Show typing indicator
     const typingId = this.showTypingIndicator();
@@ -243,10 +262,12 @@ export class ChatView extends ItemView {
       this.addErrorMessage(
         `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+      this.plugin.setStatusError();
     } finally {
       this.isProcessing = false;
       this.sendButton.disabled = false;
       this.sendButton.setText('Send');
+      this.plugin.setStatusChatting(false);
     }
   }
 
@@ -265,6 +286,9 @@ export class ChatView extends ItemView {
     this.messages.push(message);
     this.renderMessage(message);
     this.scrollToBottom();
+    
+    // Auto-save after each message
+    this.saveMessages();
   }
 
   /**
@@ -406,12 +430,74 @@ export class ChatView extends ItemView {
   /**
    * Clear the chat
    */
-  private clearChat(): void {
+  private async clearChat(): Promise<void> {
     this.messages = [];
     this.messagesContainer.empty();
+    await this.saveMessages();
     this.addSystemMessage(
       "Chat cleared. How can I help you?"
     );
+  }
+
+  /**
+   * Save messages to plugin data
+   */
+  private async saveMessages(): Promise<void> {
+    try {
+      const data = await this.plugin.loadData() || {};
+      
+      // Convert to serializable format, limit count
+      const toSave: PersistedMessage[] = this.messages
+        .filter(m => !m.isError) // Don't persist error messages
+        .slice(-MAX_PERSISTED_MESSAGES)
+        .map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp.getTime(),
+          contextSources: m.contextSources,
+        }));
+      
+      data[CHAT_HISTORY_KEY] = toSave;
+      await this.plugin.saveData(data);
+    } catch (error) {
+      console.error('[Calcifer] Failed to save chat history:', error);
+    }
+  }
+
+  /**
+   * Load messages from plugin data
+   */
+  private async loadMessages(): Promise<boolean> {
+    try {
+      const data = await this.plugin.loadData();
+      const saved = data?.[CHAT_HISTORY_KEY] as PersistedMessage[] | undefined;
+      
+      if (!saved || !Array.isArray(saved) || saved.length === 0) {
+        return false;
+      }
+      
+      // Convert back to ChatMessage format
+      this.messages = saved.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+        contextSources: m.contextSources,
+        isError: m.isError,
+      }));
+      
+      // Render all loaded messages
+      for (const message of this.messages) {
+        this.renderMessage(message);
+      }
+      
+      this.scrollToBottom();
+      return true;
+    } catch (error) {
+      console.error('[Calcifer] Failed to load chat history:', error);
+      return false;
+    }
   }
 
   /**
