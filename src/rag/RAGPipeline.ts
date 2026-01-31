@@ -2,11 +2,13 @@
  * RAG Pipeline
  * 
  * Implements Retrieval-Augmented Generation for chat with vault context.
+ * Now includes tool calling support for vault operations.
  */
 
 import { ProviderManager } from '@/providers/ProviderManager';
 import { VectorStore, SearchResult } from '@/vectorstore/VectorStore';
 import { MemoryManager } from '@/features/memory';
+import { ToolManager, ToolResult } from '@/tools';
 import type { ChatMessage } from '@/providers/types';
 import type { CalciferSettings } from '@/settings';
 
@@ -20,6 +22,10 @@ export interface RAGResponse {
     promptTokens: number;
     completionTokens: number;
   };
+  /** Tool call results if any tools were executed */
+  toolResults?: ToolResult[];
+  /** Summary of tool actions performed */
+  toolSummary?: string;
 }
 
 /**
@@ -38,6 +44,7 @@ export class RAGPipeline {
   private providerManager: ProviderManager;
   private vectorStore: VectorStore;
   private memoryManager: MemoryManager;
+  private toolManager: ToolManager | null = null;
   private settings: CalciferSettings;
 
   constructor(
@@ -50,6 +57,13 @@ export class RAGPipeline {
     this.vectorStore = vectorStore;
     this.memoryManager = memoryManager;
     this.settings = settings;
+  }
+
+  /**
+   * Set the tool manager for executing vault operations
+   */
+  setToolManager(toolManager: ToolManager): void {
+    this.toolManager = toolManager;
   }
 
   /**
@@ -72,7 +86,7 @@ export class RAGPipeline {
     // 2. Get relevant memories
     const memories = await this.getRelevantMemories(query);
     
-    // 3. Build the prompt with context
+    // 3. Build the prompt with context (now includes tool descriptions)
     const messages = this.buildPrompt(query, context, memories, conversationHistory);
     
     // 4. Get response from LLM
@@ -82,19 +96,46 @@ export class RAGPipeline {
       maxTokens: this.settings.chatMaxTokens,
     });
     
-    // 5. Extract and store any new memories
-    await this.extractMemories(query, response.content);
+    // 5. Process tool calls if any
+    let content = response.content;
+    let toolResults: ToolResult[] | undefined;
+    let toolSummary: string | undefined;
     
-    // 6. Get unique source files
+    if (this.toolManager && this.settings.enableToolCalling) {
+      const processed = await this.toolManager.processResponse(response.content);
+      content = processed.content;
+      
+      if (processed.hasToolCalls) {
+        toolResults = processed.toolResults;
+        toolSummary = processed.toolSummary;
+        
+        // If there are tool results, append them to the content for display
+        if (toolSummary) {
+          content = content.trim();
+          if (content) {
+            content += '\n\n**Actions performed:**\n' + toolSummary;
+          } else {
+            content = '**Actions performed:**\n' + toolSummary;
+          }
+        }
+      }
+    }
+    
+    // 6. Extract and store any new memories
+    await this.extractMemories(query, content);
+    
+    // 7. Get unique source files
     const contextSources = [...new Set(context.map(c => c.source))];
     
     return {
-      content: response.content,
+      content,
       contextSources,
       usage: response.usage ? {
         promptTokens: response.usage.promptTokens,
         completionTokens: response.usage.completionTokens,
       } : undefined,
+      toolResults,
+      toolSummary,
     };
   }
 
@@ -174,6 +215,11 @@ export class RAGPipeline {
     
     // System message with context
     let systemMessage = this.settings.systemPrompt;
+    
+    // Add tool descriptions if tool calling is enabled
+    if (this.toolManager && this.settings.enableToolCalling) {
+      systemMessage += '\n\n' + this.toolManager.getToolDescriptions();
+    }
     
     // Add memories to system context
     if (memories.length > 0) {

@@ -93,6 +93,9 @@ export class CalciferSettingsTab extends PluginSettingTab {
     // Chat Settings Section
     this.renderChatSection(containerEl);
 
+    // Tool Calling Settings Section
+    this.renderToolCallingSection(containerEl);
+
     // Memory Settings Section
     this.renderMemorySection(containerEl);
 
@@ -546,6 +549,62 @@ export class CalciferSettingsTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       }
     );
+  }
+
+  /**
+   * Render tool calling settings section
+   */
+  private renderToolCallingSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h2', { text: 'Tool Calling (Agent Mode)' });
+    
+    containerEl.createEl('p', { 
+      text: 'Enable Calcifer to perform actions in your vault like creating folders, moving notes, and more.',
+      cls: 'setting-item-description'
+    });
+
+    new Setting(containerEl)
+      .setName('Enable Tool Calling')
+      .setDesc('Allow Calcifer to execute vault operations (create folders, move notes, etc.)')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.enableToolCalling)
+        .onChange(async (value) => {
+          this.plugin.settings.enableToolCalling = value;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName('Require Confirmation')
+      .setDesc('Ask for confirmation before destructive operations (delete notes/folders)')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.requireToolConfirmation)
+        .onChange(async (value) => {
+          this.plugin.settings.requireToolConfirmation = value;
+          await this.plugin.saveSettings();
+        })
+      );
+    
+    // Show available tools
+    const toolsInfo = containerEl.createDiv({ cls: 'calcifer-tools-info' });
+    toolsInfo.createEl('h4', { text: 'Available Tools' });
+    const toolsList = toolsInfo.createEl('ul');
+    const tools = [
+      'create_folder - Create new folders',
+      'move_note - Move notes between folders',
+      'rename_note - Rename notes',
+      'create_note - Create new notes',
+      'delete_note - Delete notes (to trash)',
+      'append_to_note - Add content to end of note',
+      'prepend_to_note - Add content to beginning of note',
+      'add_tag / remove_tag - Manage note tags',
+      'update_frontmatter - Update note properties',
+      'search_notes - Search for notes',
+      'list_folder_contents - List folder contents',
+      'open_note - Open a note in editor',
+    ];
+    tools.forEach(tool => {
+      toolsList.createEl('li', { text: tool });
+    });
   }
 
   /**

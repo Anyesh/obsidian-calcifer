@@ -72,6 +72,12 @@ export interface CalciferSettings {
   /** Max tokens for response */
   chatMaxTokens: number;
   
+  // === Tool Calling Settings ===
+  /** Enable tool calling for vault operations (create folders, move notes, etc.) */
+  enableToolCalling: boolean;
+  /** Require confirmation before executing destructive tools (delete, overwrite) */
+  requireToolConfirmation: boolean;
+  
   // === Memory Settings ===
   /** Enable persistent memory system */
   enableMemory: boolean;
@@ -142,19 +148,41 @@ export const DEFAULT_SETTINGS: CalciferSettings = {
   ragMaxContextLength: 8000,
   
   // Chat
-  systemPrompt: `You are Calcifer, a helpful AI assistant integrated into Obsidian. 
-You have access to the user's notes and can help them with:
+  systemPrompt: `You are Calcifer, a helpful AI assistant integrated into Obsidian.
+
+You can help users with:
 - Answering questions about their vault content
-- Finding connections between notes
-- Suggesting improvements and organization
+- Finding connections between notes  
+- Performing vault operations (creating folders, moving notes, renaming, deleting, etc.)
 - General knowledge assistance
 
 When relevant context from the vault is available, use it to provide accurate answers.
-Be concise but thorough. Format responses in Markdown when helpful.`,
+Be concise but thorough. Format responses in Markdown when helpful.
+
+⚠️ CRITICAL RULE FOR ACTIONS:
+When the user asks you to DO something (create, move, delete, rename, organize, etc.):
+- You MUST use the tool system by including a \`\`\`tool code block
+- NEVER just say "I've done it" - that's a LIE if you don't include a tool block
+- The tool block is what actually executes the action
+- Without a tool block, NOTHING happens in the vault
+
+Example of CORRECT behavior:
+User: "Create an Inbox folder and move my Welcome note there"
+You respond with tool blocks:
+\`\`\`tool
+{"tool": "create_folder", "arguments": {"path": "Inbox"}}
+\`\`\`
+\`\`\`tool
+{"tool": "move_note", "arguments": {"sourcePath": "Welcome", "destinationFolder": "Inbox"}}
+\`\`\``,
   includeChatHistory: true,
   maxHistoryMessages: 10,
   chatTemperature: 0.7,
   chatMaxTokens: 2048,
+  
+  // Tool Calling
+  enableToolCalling: true,
+  requireToolConfirmation: false,
   
   // Memory
   enableMemory: true,

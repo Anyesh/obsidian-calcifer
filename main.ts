@@ -7,6 +7,7 @@
  * - Auto-tagging based on content patterns
  * - Note organization suggestions
  * - Persistent memory system
+ * - Tool calling for vault operations
  */
 
 import { Plugin, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
@@ -21,6 +22,7 @@ import { RAGPipeline } from '@/rag/RAGPipeline';
 import { MemoryManager } from '@/features/memory';
 import { AutoTagger } from '@/features/autoTag';
 import { NoteOrganizer } from '@/features/organize';
+import { ToolManager } from '@/tools';
 
 export default class CalciferPlugin extends Plugin {
   settings: CalciferSettings;
@@ -33,6 +35,7 @@ export default class CalciferPlugin extends Plugin {
   memoryManager: MemoryManager;
   autoTagger: AutoTagger;
   noteOrganizer: NoteOrganizer;
+  toolManager: ToolManager;
   
   // Status bar
   private statusBarItem: HTMLElement | null = null;
@@ -115,6 +118,16 @@ export default class CalciferPlugin extends Plugin {
         this.memoryManager,
         this.settings
       );
+      
+      // Tool manager for vault operations
+      this.toolManager = new ToolManager(this.app, {
+        enabled: this.settings.enableToolCalling,
+        requireConfirmation: this.settings.requireToolConfirmation,
+        maxToolCallsPerResponse: 10,
+      });
+      
+      // Connect tool manager to RAG pipeline
+      this.ragPipeline.setToolManager(this.toolManager);
       
       // Auto-tagging feature
       this.autoTagger = new AutoTagger(
@@ -455,5 +468,9 @@ export default class CalciferPlugin extends Plugin {
     this.ragPipeline?.updateSettings(this.settings);
     this.autoTagger?.updateSettings(this.settings);
     this.noteOrganizer?.updateSettings(this.settings);
+    this.toolManager?.updateConfig({
+      enabled: this.settings.enableToolCalling,
+      requireConfirmation: this.settings.requireToolConfirmation,
+    });
   }
 }
