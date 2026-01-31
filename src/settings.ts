@@ -1,0 +1,249 @@
+/**
+ * Calcifer Plugin Settings
+ * 
+ * Defines all configurable options for the plugin.
+ */
+
+/**
+ * Provider endpoint configuration
+ */
+export interface EndpointConfig {
+  /** Unique identifier for this endpoint */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Provider type: ollama or openai-compatible */
+  type: 'ollama' | 'openai';
+  /** Base URL for the API */
+  baseUrl: string;
+  /** API key (required for OpenAI, optional for Ollama) */
+  apiKey?: string;
+  /** Model name for chat completions */
+  chatModel: string;
+  /** Model name for embeddings */
+  embeddingModel: string;
+  /** Whether this endpoint is enabled */
+  enabled: boolean;
+  /** Priority order (lower = higher priority) */
+  priority: number;
+}
+
+/**
+ * Main settings interface
+ */
+export interface CalciferSettings {
+  // === Endpoint Configuration ===
+  /** List of configured API endpoints */
+  endpoints: EndpointConfig[];
+  
+  // === Embedding Settings ===
+  /** Enable automatic embedding on file changes */
+  enableEmbedding: boolean;
+  /** Maximum concurrent embedding requests */
+  embeddingBatchSize: number;
+  /** Debounce delay for file changes (ms) */
+  embeddingDebounceMs: number;
+  /** Chunk size for text splitting (characters) */
+  chunkSize: number;
+  /** Chunk overlap (characters) */
+  chunkOverlap: number;
+  /** Files/folders to exclude from embedding (glob patterns) */
+  embeddingExclude: string[];
+  
+  // === RAG Settings ===
+  /** Number of context chunks to retrieve */
+  ragTopK: number;
+  /** Minimum similarity score for context (0-1) */
+  ragMinScore: number;
+  /** Include frontmatter in context */
+  ragIncludeFrontmatter: boolean;
+  /** Maximum total context length (characters) */
+  ragMaxContextLength: number;
+  
+  // === Chat Settings ===
+  /** System prompt for the assistant */
+  systemPrompt: string;
+  /** Include chat history in context */
+  includeChatHistory: boolean;
+  /** Maximum chat history messages to include */
+  maxHistoryMessages: number;
+  /** Temperature for chat completions */
+  chatTemperature: number;
+  /** Max tokens for response */
+  chatMaxTokens: number;
+  
+  // === Memory Settings ===
+  /** Enable persistent memory system */
+  enableMemory: boolean;
+  /** Maximum number of memories to store */
+  maxMemories: number;
+  /** Include memories in chat context */
+  includeMemoriesInContext: boolean;
+  
+  // === Auto-Tagging Settings ===
+  /** Enable auto-tagging feature */
+  enableAutoTag: boolean;
+  /** Auto-apply tags or suggest only */
+  autoTagMode: 'auto' | 'suggest';
+  /** Maximum tags to suggest per note */
+  maxTagSuggestions: number;
+  /** Use existing vault tags as reference */
+  useExistingTags: boolean;
+  /** Confidence threshold for auto-apply (0-1) */
+  autoTagConfidence: number;
+  
+  // === Organization Settings ===
+  /** Enable auto-organization suggestions */
+  enableAutoOrganize: boolean;
+  /** Auto-move files or suggest only */
+  autoOrganizeMode: 'auto' | 'suggest';
+  /** Confidence threshold for auto-move (0-1) */
+  autoOrganizeConfidence: number;
+  
+  // === UI Settings ===
+  /** Show context sources in chat */
+  showContextSources: boolean;
+  /** Show indexing progress notifications */
+  showIndexingProgress: boolean;
+  /** Theme variant */
+  theme: 'auto' | 'light' | 'dark';
+  
+  // === Performance Settings ===
+  /** Enable on mobile devices */
+  enableOnMobile: boolean;
+  /** Rate limit: max requests per minute */
+  rateLimitRpm: number;
+  /** Request timeout (ms) */
+  requestTimeoutMs: number;
+}
+
+/**
+ * Default settings values
+ */
+export const DEFAULT_SETTINGS: CalciferSettings = {
+  // Endpoints - empty by default, user must configure
+  endpoints: [],
+  
+  // Embedding
+  enableEmbedding: true,
+  embeddingBatchSize: 10,
+  embeddingDebounceMs: 2000,
+  chunkSize: 1000,
+  chunkOverlap: 200,
+  embeddingExclude: [
+    'templates/**',
+    '.obsidian/**',
+  ],
+  
+  // RAG
+  ragTopK: 5,
+  ragMinScore: 0.5,
+  ragIncludeFrontmatter: true,
+  ragMaxContextLength: 8000,
+  
+  // Chat
+  systemPrompt: `You are Calcifer, a helpful AI assistant integrated into Obsidian. 
+You have access to the user's notes and can help them with:
+- Answering questions about their vault content
+- Finding connections between notes
+- Suggesting improvements and organization
+- General knowledge assistance
+
+When relevant context from the vault is available, use it to provide accurate answers.
+Be concise but thorough. Format responses in Markdown when helpful.`,
+  includeChatHistory: true,
+  maxHistoryMessages: 10,
+  chatTemperature: 0.7,
+  chatMaxTokens: 2048,
+  
+  // Memory
+  enableMemory: true,
+  maxMemories: 100,
+  includeMemoriesInContext: true,
+  
+  // Auto-tagging
+  enableAutoTag: true,
+  autoTagMode: 'auto',
+  maxTagSuggestions: 5,
+  useExistingTags: true,
+  autoTagConfidence: 0.8,
+  
+  // Organization
+  enableAutoOrganize: true,
+  autoOrganizeMode: 'suggest',
+  autoOrganizeConfidence: 0.9,
+  
+  // UI
+  showContextSources: true,
+  showIndexingProgress: true,
+  theme: 'auto',
+  
+  // Performance
+  enableOnMobile: true,
+  rateLimitRpm: 60,
+  requestTimeoutMs: 30000,
+};
+
+/**
+ * Validate settings and return any errors
+ */
+export function validateSettings(settings: CalciferSettings): string[] {
+  const errors: string[] = [];
+  
+  // Validate endpoints
+  if (settings.endpoints.length === 0) {
+    errors.push('At least one API endpoint must be configured');
+  }
+  
+  for (const endpoint of settings.endpoints) {
+    if (!endpoint.baseUrl) {
+      errors.push(`Endpoint "${endpoint.name}": Base URL is required`);
+    }
+    if (!endpoint.chatModel) {
+      errors.push(`Endpoint "${endpoint.name}": Chat model is required`);
+    }
+    if (!endpoint.embeddingModel) {
+      errors.push(`Endpoint "${endpoint.name}": Embedding model is required`);
+    }
+    if (endpoint.type === 'openai' && !endpoint.apiKey) {
+      errors.push(`Endpoint "${endpoint.name}": API key is required for OpenAI`);
+    }
+  }
+  
+  // Validate numeric ranges
+  if (settings.chunkSize < 100 || settings.chunkSize > 10000) {
+    errors.push('Chunk size must be between 100 and 10000');
+  }
+  if (settings.chunkOverlap >= settings.chunkSize) {
+    errors.push('Chunk overlap must be less than chunk size');
+  }
+  if (settings.ragTopK < 1 || settings.ragTopK > 20) {
+    errors.push('RAG top K must be between 1 and 20');
+  }
+  if (settings.ragMinScore < 0 || settings.ragMinScore > 1) {
+    errors.push('RAG min score must be between 0 and 1');
+  }
+  if (settings.chatTemperature < 0 || settings.chatTemperature > 2) {
+    errors.push('Chat temperature must be between 0 and 2');
+  }
+  
+  return errors;
+}
+
+/**
+ * Get the active endpoint based on priority
+ */
+export function getActiveEndpoint(settings: CalciferSettings): EndpointConfig | null {
+  const enabled = settings.endpoints
+    .filter(e => e.enabled)
+    .sort((a, b) => a.priority - b.priority);
+  
+  return enabled.length > 0 ? enabled[0] : null;
+}
+
+/**
+ * Generate a unique endpoint ID
+ */
+export function generateEndpointId(): string {
+  return `ep_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}

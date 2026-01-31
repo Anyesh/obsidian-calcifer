@@ -1,0 +1,35 @@
+{
+  "name": "calcifer",
+  "version": "0.1.0",
+  "description": "AI-powered assistant with RAG, chat, auto-tagging, note organization, and memory for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src/ --ext .ts",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "ai",
+    "rag",
+    "embeddings",
+    "ollama",
+    "openai",
+    "chat"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.19.10",
+    "eslint": "^8.56.0",
+    "obsidian": "latest",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
+}
