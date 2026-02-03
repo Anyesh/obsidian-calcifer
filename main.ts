@@ -294,10 +294,30 @@ export default class CalciferPlugin extends Plugin {
    * Register event handlers for file changes
    */
   registerEventHandlers() {
-    // Handle file modifications for auto-tagging (this is lightweight)
+    // Handle new file creation - queue for indexing and auto-tagging
+    this.registerEvent(
+      this.app.vault.on('create', (file) => {
+        if (file.path.endsWith('.md')) {
+          // Queue for embedding indexing
+          if (this.embeddingManager) {
+            this.embeddingManager.queueFile(file.path);
+          }
+          // Queue for auto-tagging
+          if (this.settings.enableAutoTag && this.autoTagger) {
+            this.autoTagger.queueFile(file.path);
+          }
+        }
+      })
+    );
+
+    // Handle file modifications - queue for re-indexing and auto-tagging
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
         if (file.path.endsWith('.md')) {
+          // Queue for re-indexing (debounced internally)
+          if (this.embeddingManager) {
+            this.embeddingManager.queueFile(file.path);
+          }
           // Queue for auto-tagging (debounced internally)
           if (this.settings.enableAutoTag && this.autoTagger) {
             this.autoTagger.queueFile(file.path);
@@ -305,8 +325,8 @@ export default class CalciferPlugin extends Plugin {
         }
       })
     );
-    
-    // Remove deleted files from index (this is safe, just deletes)
+
+    // Remove deleted files from index
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
         if (file.path.endsWith('.md')) {
@@ -314,8 +334,8 @@ export default class CalciferPlugin extends Plugin {
         }
       })
     );
-    
-    // Handle renamed files (this is safe, just updates path)
+
+    // Handle renamed files - update path in index
     this.registerEvent(
       this.app.vault.on('rename', (file, oldPath) => {
         if (file.path.endsWith('.md')) {
