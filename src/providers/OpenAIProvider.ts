@@ -251,12 +251,14 @@ export class OpenAIProvider implements AIProvider {
       let fullContent = '';
       let buffer = '';
 
-      while (true) {
+      let streamDone = false;
+      while (!streamDone) {
         const { done, value } = await reader.read();
         
         if (done) {
           onChunk({ content: '', done: true });
-          break;
+          streamDone = true;
+          continue;
         }
 
         buffer += decoder.decode(value, { stream: true });

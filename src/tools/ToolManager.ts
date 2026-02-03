@@ -5,7 +5,7 @@
  * Acts as the bridge between LLM responses and vault operations.
  */
 
-import { App, Notice, Modal, Setting } from 'obsidian';
+import { App, Notice, Modal } from 'obsidian';
 import { ToolExecutor } from './ToolExecutor';
 import {
   ToolCall,
@@ -15,7 +15,6 @@ import {
   generateToolDescriptions,
   getToolByName,
   isDestructiveTool,
-  isModifyingTool,
 } from './definitions';
 
 /**

@@ -178,7 +178,7 @@ export class EmbeddingManager {
       
       // Find the first healthy provider
       let healthCheck = null;
-      for (const [id, result] of healthResults) {
+      for (const [_id, result] of healthResults) {
         if (result.healthy) {
           healthCheck = result;
           break;
@@ -246,7 +246,7 @@ export class EmbeddingManager {
       }
       
       // Process files in small batches with yielding to prevent UI freeze
-      const FILES_PER_YIELD = 1; // Process 1 file at a time for maximum responsiveness
+      // Note: We process 1 file at a time for maximum responsiveness
       
       
       for (let i = 0; i < filesToIndex.length; i++) {
@@ -531,6 +531,12 @@ export class EmbeddingManager {
    * Check if a path should be excluded from indexing
    */
   private shouldExclude(path: string): boolean {
+    // Always exclude the config directory (user-configurable, not necessarily .obsidian)
+    const configDir = this.app.vault.configDir;
+    if (path.startsWith(configDir + '/') || path === configDir) {
+      return true;
+    }
+    
     for (const pattern of this.settings.embeddingExclude) {
       if (this.matchGlob(path, pattern)) {
         return true;

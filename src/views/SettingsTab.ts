@@ -4,10 +4,9 @@
  * Provides the settings interface for Calcifer plugin configuration.
  */
 
-import { App, PluginSettingTab, Setting, Notice, TextComponent, DropdownComponent, Modal } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, TextComponent, Modal } from 'obsidian';
 import type CalciferPlugin from '@/../main';
 import { 
-  CalciferSettings, 
   EndpointConfig, 
   generateEndpointId,
   validateSettings 
@@ -79,8 +78,6 @@ export class CalciferSettingsTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass('calcifer-settings');
 
-    containerEl.createEl('h1', { text: 'Calcifer Settings' });
-
     // Endpoint Configuration Section
     this.renderEndpointSection(containerEl);
 
@@ -119,7 +116,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render endpoint configuration section
    */
   private renderEndpointSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'API Endpoints' });
+    new Setting(containerEl).setName('API endpoints').setHeading();
     containerEl.createEl('p', { 
       text: 'Configure AI provider endpoints. Endpoints are tried in priority order.',
       cls: 'setting-item-description'
@@ -274,7 +271,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
           this.showModelSelectionModal(models, (selectedModel) => {
             endpoint.chatModel = selectedModel;
             chatModelText.setValue(selectedModel);
-            this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           });
         } catch (error) {
           new Notice(`Failed to load models: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -324,7 +321,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
           this.showModelSelectionModal(models, (selectedModel) => {
             endpoint.embeddingModel = selectedModel;
             embeddingModelText.setValue(selectedModel);
-            this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           });
         } catch (error) {
           new Notice(`Failed to load models: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -449,7 +446,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render embedding settings section
    */
   private renderEmbeddingSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Embedding Settings' });
+    new Setting(containerEl).setName('Embedding').setHeading();
 
     new Setting(containerEl)
       .setName('Enable Embedding')
@@ -518,7 +515,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render RAG settings section
    */
   private renderRAGSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'RAG Settings' });
+    new Setting(containerEl).setName('RAG').setHeading();
 
     new Setting(containerEl)
       .setName('Top K Results')
@@ -574,7 +571,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render chat settings section
    */
   private renderChatSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Chat Settings' });
+    new Setting(containerEl).setName('Chat').setHeading();
 
     new Setting(containerEl)
       .setName('System Prompt')
@@ -641,7 +638,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render tool calling settings section
    */
   private renderToolCallingSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Tool Calling (Agent Mode)' });
+    new Setting(containerEl).setName('Tool calling (agent mode)').setHeading();
     
     containerEl.createEl('p', { 
       text: 'Enable Calcifer to perform actions in your vault like creating folders, moving notes, and more.',
@@ -672,7 +669,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     
     // Show available tools
     const toolsInfo = containerEl.createDiv({ cls: 'calcifer-tools-info' });
-    toolsInfo.createEl('h4', { text: 'Available Tools' });
+    new Setting(toolsInfo).setName('Available tools').setHeading();
     const toolsList = toolsInfo.createEl('ul');
     const tools = [
       'create_folder - Create new folders',
@@ -697,7 +694,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render memory settings section
    */
   private renderMemorySection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Memory Settings' });
+    new Setting(containerEl).setName('Memory').setHeading();
 
     new Setting(containerEl)
       .setName('Enable Memory')
@@ -750,7 +747,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render auto-tagging settings section
    */
   private renderAutoTagSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Auto-Tagging Settings' });
+    new Setting(containerEl).setName('Auto-tagging').setHeading();
 
     new Setting(containerEl)
       .setName('Enable Auto-Tagging')
@@ -818,7 +815,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render organization settings section
    */
   private renderOrganizationSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Organization Settings' });
+    new Setting(containerEl).setName('Organization').setHeading();
 
     new Setting(containerEl)
       .setName('Enable Auto-Organization')
@@ -862,7 +859,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render UI settings section
    */
   private renderUISection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'UI Settings' });
+    new Setting(containerEl).setName('UI').setHeading();
 
     new Setting(containerEl)
       .setName('Show Context Sources')
@@ -891,7 +888,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Render performance settings section
    */
   private renderPerformanceSection(containerEl: HTMLElement): void {
-    containerEl.createEl('h2', { text: 'Performance Settings' });
+    new Setting(containerEl).setName('Performance').setHeading();
 
     new Setting(containerEl)
       .setName('Enable on Mobile')
@@ -960,7 +957,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     if (errors.length > 0) {
       const warningEl = containerEl.createDiv({ cls: 'calcifer-settings-warnings' });
-      warningEl.createEl('h3', { text: '⚠️ Configuration Issues' });
+      new Setting(warningEl).setName('⚠️ Configuration issues').setHeading();
 
       const list = warningEl.createEl('ul');
       for (const error of errors) {
@@ -987,7 +984,7 @@ class ModelSelectionModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    contentEl.createEl('h2', { text: 'Select Model' });
+    new Setting(contentEl).setName('Select model').setHeading();
 
     const searchContainer = contentEl.createDiv({ cls: 'calcifer-model-search' });
     const searchInput = searchContainer.createEl('input', {

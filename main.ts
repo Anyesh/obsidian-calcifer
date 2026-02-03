@@ -59,7 +59,7 @@ export default class CalciferPlugin extends Plugin {
     
     // Add ribbon icon
     this.addRibbonIcon('bot', 'Open Calcifer Chat', () => {
-      this.activateChatView();
+      void this.activateChatView();
     });
     
     // Register commands
@@ -73,7 +73,7 @@ export default class CalciferPlugin extends Plugin {
     
   }
 
-  async onunload() {
+  onunload() {
     
     // Force stop any running embedding
     this.embeddingManager?.forceStop();
@@ -155,8 +155,8 @@ export default class CalciferPlugin extends Plugin {
     // Open chat view
     this.addCommand({
       id: 'open-chat',
-      name: 'Open Calcifer Chat',
-      callback: () => this.activateChatView(),
+      name: 'Open Chat',
+      callback: () => void this.activateChatView(),
     });
     
     // Re-index vault
@@ -165,14 +165,14 @@ export default class CalciferPlugin extends Plugin {
       name: 'Re-index Vault',
       callback: async () => {
         if (!this.providerManager.hasAvailableProvider()) {
-          new Notice('Calcifer: No provider configured. Add an endpoint first.');
+          new Notice('No provider configured. Add an endpoint first.');
           return;
         }
         if (!this.settings.enableEmbedding) {
-          new Notice('Calcifer: Embedding is disabled. Enable it in settings first.');
+          new Notice('Embedding is disabled. Enable it in settings first.');
           return;
         }
-        new Notice('Calcifer: Starting vault indexing...');
+        new Notice('Starting vault indexing...');
         await this.embeddingManager.indexVault(true);
       },
     });
@@ -180,10 +180,10 @@ export default class CalciferPlugin extends Plugin {
     // Stop indexing
     this.addCommand({
       id: 'stop-indexing',
-      name: 'Stop Indexing (Emergency)',
+      name: 'Stop Indexing',
       callback: () => {
         this.embeddingManager.forceStop();
-        new Notice('Calcifer: Indexing stopped');
+        new Notice('Indexing stopped');
       },
     });
     
@@ -194,7 +194,7 @@ export default class CalciferPlugin extends Plugin {
       callback: async () => {
         this.embeddingManager.forceStop();
         await this.vectorStore.clear();
-        new Notice('Calcifer: Embedding index cleared');
+        new Notice('Embedding index cleared');
       },
     });
     
@@ -206,8 +206,8 @@ export default class CalciferPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
           if (!checking) {
-            this.embeddingManager.indexFile(file);
-            new Notice(`Calcifer: Indexing ${file.basename}`);
+            void this.embeddingManager.indexFile(file);
+            new Notice(`Indexing ${file.basename}`);
           }
           return true;
         }
@@ -265,7 +265,7 @@ export default class CalciferPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
           if (!checking) {
-            this.autoTagger.showTagSuggestions(file);
+            void this.autoTagger.showTagSuggestions(file);
           }
           return true;
         }
@@ -281,7 +281,7 @@ export default class CalciferPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
           if (!checking) {
-            this.noteOrganizer.suggestFolder(file);
+            void this.noteOrganizer.suggestFolder(file);
           }
           return true;
         }
@@ -328,7 +328,7 @@ export default class CalciferPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('delete', (file) => {
         if (file.path.endsWith('.md')) {
-          this.vectorStore.deleteByPath(file.path);
+          void this.vectorStore.deleteByPath(file.path);
         }
       })
     );
@@ -337,7 +337,7 @@ export default class CalciferPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on('rename', (file, oldPath) => {
         if (file.path.endsWith('.md')) {
-          this.vectorStore.updatePath(oldPath, file.path);
+          void this.vectorStore.updatePath(oldPath, file.path);
         }
       })
     );

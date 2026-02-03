@@ -295,8 +295,6 @@ export class VectorStore {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       
-      let completed = 0;
-      const totalOps = docs.length * 2; // delete old + add new for each doc
       let hasError = false;
       
       transaction.oncomplete = () => resolve();
@@ -315,10 +313,7 @@ export class VectorStore {
       
       for (const doc of docs) {
         // Delete old entry
-        const deleteRequest = store.delete(doc.id);
-        deleteRequest.onsuccess = () => {
-          completed++;
-        };
+        store.delete(doc.id);
         
         // Create new entry with updated path
         const newDoc = {
@@ -326,10 +321,7 @@ export class VectorStore {
           path: newPath,
           id: `${newPath}#${doc.chunkIndex}`,
         };
-        const addRequest = store.put(newDoc);
-        addRequest.onsuccess = () => {
-          completed++;
-        };
+        store.put(newDoc);
       }
     });
   }
@@ -415,7 +407,7 @@ export class VectorStore {
   /**
    * Get all documents in batches to allow UI updates
    */
-  private async getAllInBatches(batchSize: number): Promise<VectorDocument[]> {
+  private async getAllInBatches(_batchSize: number): Promise<VectorDocument[]> {
     this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
@@ -518,7 +510,6 @@ export class VectorStore {
     this.ensureInitialized();
     
     const pathMtimes = new Map<string, number>();
-    let docCount = 0;
     
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readonly');
@@ -529,7 +520,6 @@ export class VectorStore {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         
         if (cursor) {
-          docCount++;
           const doc = cursor.value as VectorDocument;
           const existingMtime = pathMtimes.get(doc.path) || 0;
           if (doc.mtime > existingMtime) {

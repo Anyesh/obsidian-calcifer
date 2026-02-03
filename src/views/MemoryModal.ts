@@ -9,6 +9,47 @@ import type { Memory } from '@/features/memory';
 import type { MemoryManager } from '@/features/memory';
 
 /**
+ * Confirmation Dialog Modal
+ */
+class ConfirmationModal extends Modal {
+  private message: string;
+  private onConfirm: () => void;
+
+  constructor(app: App, message: string, onConfirm: () => void) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('calcifer-confirm-modal');
+
+    contentEl.createEl('h3', { text: 'Confirm' });
+    contentEl.createEl('p', { text: this.message });
+
+    const buttonContainer = contentEl.createDiv({ cls: 'calcifer-confirm-buttons' });
+
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const confirmBtn = buttonContainer.createEl('button', { 
+      text: 'Confirm',
+      cls: 'mod-warning'
+    });
+    confirmBtn.addEventListener('click', () => {
+      this.onConfirm();
+      this.close();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
  * Memory Management Modal
  */
 export class MemoryModal extends Modal {
@@ -48,13 +89,16 @@ export class MemoryModal extends Modal {
       .addButton(button => button
         .setButtonText('Clear All')
         .setWarning()
-        .onClick(async () => {
-          const confirmed = confirm('Are you sure you want to delete all memories? This cannot be undone.');
-          if (confirmed) {
-            await this.memoryManager.clearAllMemories();
-            this.renderMemories();
-            new Notice('All memories cleared');
-          }
+        .onClick(() => {
+          new ConfirmationModal(
+            this.app,
+            'Are you sure you want to delete all memories? This cannot be undone.',
+            async () => {
+              await this.memoryManager.clearAllMemories();
+              this.renderMemories();
+              new Notice('All memories cleared');
+            }
+          ).open();
         })
       );
 
@@ -205,7 +249,7 @@ class AddEditMemoryModal extends Modal {
           .setPlaceholder('e.g., User prefers concise answers')
           .setValue(this.memory?.content || '');
         text.inputEl.rows = 4;
-        text.inputEl.style.width = '100%';
+        text.inputEl.addClass('calcifer-memory-textarea');
       });
 
     // Buttons

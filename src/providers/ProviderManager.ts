@@ -85,8 +85,11 @@ export class ProviderManager {
         return new OllamaProvider(config, timeoutMs, useNativeFetch);
       case 'openai':
         return new OpenAIProvider(config, timeoutMs, useNativeFetch);
-      default:
-        throw new Error(`Unknown provider type: ${config.type}`);
+      default: {
+        // Exhaustive check - this should never be reached
+        const exhaustiveCheck: never = config.type;
+        throw new Error(`Unknown provider type: ${exhaustiveCheck}`);
+      }
     }
   }
 

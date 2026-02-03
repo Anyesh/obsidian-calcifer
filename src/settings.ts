@@ -138,7 +138,6 @@ export const DEFAULT_SETTINGS: CalciferSettings = {
   chunkOverlap: 200,
   embeddingExclude: [
     'templates/**',
-    '.obsidian/**',
   ],
   
   // RAG

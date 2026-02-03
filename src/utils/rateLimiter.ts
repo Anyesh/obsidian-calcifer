@@ -131,7 +131,7 @@ export class ConcurrencyLimiter {
           const result = await fn();
           resolve(result);
         } catch (error) {
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         } finally {
           this.running--;
           this.processQueue();

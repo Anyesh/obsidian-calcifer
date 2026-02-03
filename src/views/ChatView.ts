@@ -118,9 +118,9 @@ export class ChatView extends ItemView {
     setIcon(settingsBtn, 'settings');
     settingsBtn.title = 'Open settings';
     settingsBtn.addEventListener('click', () => {
-      // Open settings tab
-      (this.app as any).setting.open();
-      (this.app as any).setting.openTabById('calcifer');
+      // Open settings tab - use internal command API
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.app as any).commands?.executeCommandById('app:open-settings');
     });
   }
 
@@ -162,8 +162,12 @@ export class ChatView extends ItemView {
 
     // Auto-resize textarea
     this.inputArea.addEventListener('input', () => {
-      this.inputArea.style.height = 'auto';
-      this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 200) + 'px';
+      this.inputArea.setCssProps({
+        '--input-height': 'auto',
+      });
+      this.inputArea.setCssProps({
+        '--input-height': Math.min(this.inputArea.scrollHeight, 200) + 'px',
+      });
     });
 
     // Send button
@@ -179,13 +183,13 @@ export class ChatView extends ItemView {
    */
   private createStatusBar(container: HTMLElement): void {
     this.statusBar = container.createDiv({ cls: 'calcifer-status-bar' });
-    this.updateStatus();
+    void this.updateStatus();
   }
 
   /**
    * Update status bar
    */
-  private updateStatus(): void {
+  private async updateStatus(): Promise<void> {
     this.statusBar.empty();
 
     const indicator = this.statusBar.createDiv({ cls: 'calcifer-status-indicator' });
@@ -206,9 +210,10 @@ export class ChatView extends ItemView {
 
     // Stats
     const stats = this.statusBar.createDiv({ cls: 'calcifer-status-stats' });
-    this.plugin.vectorStore?.getStats().then((s) => {
-      stats.setText(`${s.uniqueFiles} files indexed`);
-    });
+    const vectorStats = await this.plugin.vectorStore?.getStats();
+    if (vectorStats) {
+      stats.setText(`${vectorStats.uniqueFiles} files indexed`);
+    }
   }
 
   /**
@@ -229,7 +234,7 @@ export class ChatView extends ItemView {
     
     // Clear input
     this.inputArea.value = '';
-    this.inputArea.style.height = 'auto';
+    this.inputArea.setCssProps({ '--input-height': 'auto' });
 
     // Set processing state
     this.isProcessing = true;
@@ -352,7 +357,7 @@ export class ChatView extends ItemView {
         message.content,
         contentEl,
         '',
-        this.plugin
+        this
       );
     } else {
       contentEl.setText(message.content);

@@ -84,7 +84,7 @@ export class RAGPipeline {
     const context = await this.retrieveContext(query);
     
     // 2. Get relevant memories
-    const memories = await this.getRelevantMemories(query);
+    const memories = this.getRelevantMemories(query);
     
     // 3. Build the prompt with context (now includes tool descriptions)
     const messages = this.buildPrompt(query, context, memories, conversationHistory);
@@ -170,8 +170,14 @@ export class RAGPipeline {
         // Include frontmatter metadata if enabled
         if (this.settings.ragIncludeFrontmatter && r.document.metadata) {
           const metaStr = Object.entries(r.document.metadata)
-            .filter(([_, v]) => v !== null && v !== undefined)
-            .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+            .filter((entry): entry is [string, unknown] => {
+              const val = entry[1];
+              return val !== null && val !== undefined;
+            })
+            .map(([k, v]) => {
+              const value = Array.isArray(v) ? v.join(', ') : String(v);
+              return `${k}: ${value}`;
+            })
             .join('\n');
           if (metaStr) {
             content = `---\n${metaStr}\n---\n\n${content}`;
@@ -194,7 +200,7 @@ export class RAGPipeline {
   /**
    * Get relevant memories for the query
    */
-  private async getRelevantMemories(query: string): Promise<string[]> {
+  private getRelevantMemories(query: string): string[] {
     if (!this.settings.enableMemory || !this.settings.includeMemoriesInContext) {
       return [];
     }

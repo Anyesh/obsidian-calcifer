@@ -22,7 +22,7 @@ import type { EndpointConfig } from '@/settings';
 /**
  * Ollama API response types
  */
-interface OllamaGenerateResponse {
+interface _OllamaGenerateResponse {
   model: string;
   created_at: string;
   response: string;
@@ -228,12 +228,14 @@ export class OllamaProvider implements AIProvider {
       let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
       let finishReason: 'stop' | 'length' = 'stop';
 
-      while (true) {
+      let streamDone = false;
+      while (!streamDone) {
         const { done, value } = await reader.read();
         
         if (done) {
           onChunk({ content: '', done: true });
-          break;
+          streamDone = true;
+          continue;
         }
 
         buffer += decoder.decode(value, { stream: true });

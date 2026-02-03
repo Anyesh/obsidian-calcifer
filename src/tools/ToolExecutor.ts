@@ -5,7 +5,7 @@
  * Each tool function performs the actual Obsidian API operations.
  */
 
-import { App, TFile, TFolder, TAbstractFile, Notice, normalizePath } from 'obsidian';
+import { App, TFile, TFolder, TAbstractFile, normalizePath } from 'obsidian';
 import { ToolCall, ToolResult, getToolByName } from './definitions';
 
 /**
@@ -236,7 +236,7 @@ export class ToolExecutor {
       };
     }
     
-    await this.app.vault.delete(folder, true);
+    await this.app.fileManager.trashFile(folder);
     
     return {
       success: true,
@@ -277,7 +277,11 @@ export class ToolExecutor {
     }
     
     if (existing && overwrite) {
-      await this.app.vault.modify(existing as TFile, content);
+      if (!(existing instanceof TFile)) {
+        return { success: false, message: `"${path}" is not a file.` };
+      }
+      // Use vault.process for atomic file modification
+      await this.app.vault.process(existing, () => content);
       return {
         success: true,
         message: `Overwrote note "${path}".`,
@@ -376,7 +380,7 @@ export class ToolExecutor {
     }
     
     const filePath = file.path;
-    await this.app.vault.trash(file, true);
+    await this.app.fileManager.trashFile(file);
     
     return {
       success: true,
@@ -479,7 +483,7 @@ export class ToolExecutor {
     };
   }
 
-  private async listFolderContents(args: Record<string, unknown>): Promise<ToolResult> {
+  private listFolderContents(args: Record<string, unknown>): ToolResult {
     const pathInput = this.getStringArg(args, 'path', '');
     const path = pathInput ? this.sanitizePath(pathInput) : '';
     const recursive = args.recursive === true;
