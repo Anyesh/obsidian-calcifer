@@ -40,6 +40,10 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   minify: prod,
+  // Drop debugger statements in production
+  drop: prod ? ["debugger"] : [],
+  // Note: console.log/debug statements should be removed manually from source
+  // to preserve console.error/warn for actual error reporting
   alias: {
     "@": "./src",
   },

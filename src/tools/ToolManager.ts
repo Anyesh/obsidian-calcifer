@@ -56,6 +56,7 @@ class ToolConfirmationModal extends Modal {
   private toolCall: ToolCall;
   private onConfirm: () => void;
   private onCancel: () => void;
+  private resolved: boolean = false;
 
   constructor(
     app: App,
@@ -75,17 +76,17 @@ class ToolConfirmationModal extends Modal {
     contentEl.addClass('calcifer-confirmation-modal');
 
     contentEl.createEl('h2', { text: '⚠️ Confirm Action' });
-    
+
     contentEl.createEl('p', {
       text: `Calcifer wants to execute a ${isDestructiveTool(this.toolCall.name) ? 'destructive' : 'modifying'} action:`,
     });
-    
+
     const detailsEl = contentEl.createDiv({ cls: 'calcifer-tool-details' });
     detailsEl.createEl('strong', { text: `Tool: ${this.toolCall.name}` });
-    
+
     const argsEl = detailsEl.createEl('pre');
     argsEl.setText(JSON.stringify(this.toolCall.arguments, null, 2));
-    
+
     if (isDestructiveTool(this.toolCall.name)) {
       contentEl.createEl('p', {
         text: '⚠️ This action may delete data permanently!',
@@ -94,18 +95,20 @@ class ToolConfirmationModal extends Modal {
     }
 
     const buttonContainer = contentEl.createDiv({ cls: 'calcifer-modal-buttons' });
-    
+
     const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
     cancelBtn.addEventListener('click', () => {
+      this.resolved = true;
       this.onCancel();
       this.close();
     });
-    
-    const confirmBtn = buttonContainer.createEl('button', { 
+
+    const confirmBtn = buttonContainer.createEl('button', {
       text: 'Confirm',
       cls: 'mod-warning',
     });
     confirmBtn.addEventListener('click', () => {
+      this.resolved = true;
       this.onConfirm();
       this.close();
     });
@@ -114,6 +117,12 @@ class ToolConfirmationModal extends Modal {
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
+
+    // If modal was closed without clicking a button (ESC, click outside, etc.),
+    // treat it as cancellation to prevent hanging promise
+    if (!this.resolved) {
+      this.onCancel();
+    }
   }
 }
 
@@ -124,8 +133,6 @@ export class ToolManager {
   private app: App;
   private executor: ToolExecutor;
   private config: ToolManagerConfig;
-  private executionCount: number = 0;
-  private lastExecutionTime: number = 0;
 
   constructor(app: App, config: Partial<ToolManagerConfig> = {}) {
     this.app = app;
@@ -199,7 +206,6 @@ export class ToolManager {
     const summaryParts: string[] = [];
     
     for (const toolCall of toolCalls) {
-      console.log(`[Calcifer] Executing tool: ${toolCall.name}`, toolCall.arguments);
       
       // Validate tool exists
       const tool = getToolByName(toolCall.name);
@@ -230,11 +236,7 @@ export class ToolManager {
       // Execute the tool
       const result = await this.executor.execute(toolCall);
       toolResults.push(result);
-      
-      // Track execution for rate limiting
-      this.executionCount++;
-      this.lastExecutionTime = Date.now();
-      
+
       // Build summary
       const icon = result.success ? '✅' : '❌';
       summaryParts.push(`${icon} ${result.message}`);

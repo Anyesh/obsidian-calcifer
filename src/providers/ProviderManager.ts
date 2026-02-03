@@ -124,6 +124,13 @@ export class ProviderManager {
   }
 
   /**
+   * Get a provider by ID
+   */
+  getProviderById(id: string): AIProvider | undefined {
+    return this.providers.get(id);
+  }
+
+  /**
    * Check health of all providers
    */
   async checkAllHealth(): Promise<Map<string, HealthCheckResult>> {
@@ -240,7 +247,6 @@ export class ProviderManager {
    */
   async embed(request: EmbeddingRequest): Promise<EmbeddingResponse> {
     const providers = this.getSortedProviders();
-    console.log(`[Calcifer] ProviderManager.embed: ${providers.length} providers available`);
     
     if (providers.length === 0) {
       throw new ProviderError(
@@ -254,11 +260,7 @@ export class ProviderManager {
     
     for (const provider of providers) {
       try {
-        console.log(`[Calcifer] Trying provider: ${provider.name}`);
-        console.time(`[Calcifer] Provider ${provider.name} embed`);
         const response = await provider.embed(request);
-        console.timeEnd(`[Calcifer] Provider ${provider.name} embed`);
-        console.log(`[Calcifer] Provider ${provider.name} SUCCESS`);
         return response;
       } catch (error) {
         console.warn(`Provider ${provider.name} embed failed:`, error);

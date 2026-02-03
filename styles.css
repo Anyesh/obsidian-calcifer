@@ -667,9 +667,161 @@
   .calcifer-spin {
     animation: calcifer-pulse 1.5s ease-in-out infinite;
   }
-  
+
   @keyframes calcifer-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+}
+
+/* ============================================
+   Model Selection Modal
+   ============================================ */
+.calcifer-model-search {
+  margin-bottom: var(--size-4-3);
+}
+
+.calcifer-model-search input {
+  width: 100%;
+  padding: var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+}
+
+.calcifer-model-search input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.calcifer-model-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.calcifer-model-item {
+  padding: var(--size-4-2) var(--size-4-3);
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+  transition: background-color 0.15s ease;
+  font-family: var(--font-monospace);
+  font-size: var(--font-small);
+}
+
+.calcifer-model-item:last-child {
+  border-bottom: none;
+}
+
+.calcifer-model-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.calcifer-no-results {
+  text-align: center;
+  padding: var(--size-4-4);
+  color: var(--text-muted);
+}
+
+/* ============================================
+   Endpoint Settings Enhancements
+   ============================================ */
+.calcifer-endpoint-item {
+  flex-direction: column;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin-bottom: var(--size-4-3);
+  padding: 0;
+}
+
+.calcifer-endpoint-header {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  border-radius: var(--radius-m) var(--radius-m) 0 0;
+}
+
+.calcifer-endpoint-header input {
+  flex: 1;
+  padding: var(--size-4-1) var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+
+.calcifer-endpoint-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calcifer-endpoint-badge--ollama {
+  background-color: rgba(var(--color-blue-rgb), 0.2);
+  color: var(--color-blue);
+}
+
+.calcifer-endpoint-badge--openai {
+  background-color: rgba(var(--color-green-rgb), 0.2);
+  color: var(--color-green);
+}
+
+.calcifer-endpoint-priority {
+  display: flex;
+  gap: var(--size-2-1);
+}
+
+.calcifer-endpoint-priority button {
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  cursor: pointer;
+  font-size: var(--font-small);
+  transition: all 0.15s ease;
+}
+
+.calcifer-endpoint-priority button:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.calcifer-endpoint-settings {
+  padding: var(--size-4-3);
+}
+
+.calcifer-settings-warnings {
+  margin-top: var(--size-4-4);
+  padding: var(--size-4-3);
+  background-color: rgba(var(--color-yellow-rgb), 0.1);
+  border: 1px solid var(--color-yellow);
+  border-radius: var(--radius-m);
+}
+
+.calcifer-settings-warnings h3 {
+  margin-top: 0;
+  margin-bottom: var(--size-4-2);
+  color: var(--color-yellow);
+}
+
+.calcifer-settings-warnings ul {
+  margin: 0;
+  padding-left: var(--size-4-4);
+}
+
+.calcifer-settings-warnings li {
+  margin-bottom: var(--size-2-1);
+  color: var(--text-normal);
 }

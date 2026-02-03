@@ -453,7 +453,6 @@ export class OpenAIProvider implements AIProvider {
         options.body = JSON.stringify(body);
       }
 
-      console.debug('[Calcifer] Making fetch request:', { url, method });
       const response = await fetch(url, options);
       
       if (response.status >= 400) {

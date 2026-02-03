@@ -41,7 +41,6 @@ export default class CalciferPlugin extends Plugin {
   private statusBarItem: HTMLElement | null = null;
 
   async onload() {
-    console.log('Loading Calcifer plugin');
     
     // Load settings
     await this.loadSettings();
@@ -72,11 +71,9 @@ export default class CalciferPlugin extends Plugin {
     // Add status bar item
     this.setupStatusBar();
     
-    console.log('Calcifer plugin loaded');
   }
 
   async onunload() {
-    console.log('Unloading Calcifer plugin');
     
     // Force stop any running embedding
     this.embeddingManager?.forceStop();
@@ -450,7 +447,6 @@ export default class CalciferPlugin extends Plugin {
     // Migration: increase timeout if it was the old default of 30 seconds
     // First embedding request can take a long time as model loads into memory
     if (this.settings.requestTimeoutMs === 30000) {
-      console.log('[Calcifer] Migrating requestTimeoutMs from 30s to 120s');
       this.settings.requestTimeoutMs = 120000;
       await this.saveData(this.settings);
     }

@@ -290,20 +290,14 @@ export class OllamaProvider implements AIProvider {
     
     // Ollama's /api/embed accepts single string or array
     const input = Array.isArray(request.input) ? request.input : [request.input];
-    
-    console.log(`[Calcifer] OllamaProvider.embed: ${input.length} texts, model: ${request.model || this.embeddingModel}`);
-    console.log(`[Calcifer] OllamaProvider.embed: URL = ${url}`);
-    
+
     const body = {
       model: request.model || this.embeddingModel,
       input: input,
     };
 
     try {
-      console.time('[Calcifer] OllamaProvider HTTP request');
       const response = await this.request<OllamaEmbedResponse>(url, body);
-      console.timeEnd('[Calcifer] OllamaProvider HTTP request');
-      console.log(`[Calcifer] OllamaProvider.embed: got ${response.embeddings?.length} embeddings`);
       
       return {
         embeddings: response.embeddings,
@@ -314,7 +308,6 @@ export class OllamaProvider implements AIProvider {
         },
       };
     } catch (error) {
-      console.error('[Calcifer] OllamaProvider.embed FAILED:', error);
       throw this.wrapError(error, 'embed');
     }
   }
@@ -352,20 +345,14 @@ export class OllamaProvider implements AIProvider {
    * Make an HTTP request with proper error handling and timeout
    */
   private async request<T>(url: string, body: unknown): Promise<T> {
-    console.log(`[Calcifer] OllamaProvider.request: ${url}`);
-    
     if (this.useNativeFetch) {
-      console.log('[Calcifer] Using native fetch');
       return this.requestWithFetch<T>(url, 'POST', body);
     }
-
-    console.log('[Calcifer] Using Obsidian requestUrl');
     
     // Wrap requestUrl with timeout that can be cleared
     let timeoutId: ReturnType<typeof setTimeout>;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
-        console.error(`[Calcifer] Request TIMEOUT after ${this.timeoutMs}ms`);
         reject(new Error(`Request timed out after ${this.timeoutMs}ms`));
       }, this.timeoutMs);
     });
@@ -380,9 +367,7 @@ export class OllamaProvider implements AIProvider {
     };
 
     try {
-      console.log('[Calcifer] Calling requestUrl...');
       const response = await Promise.race([requestUrl(params), timeoutPromise]);
-      console.log(`[Calcifer] requestUrl returned, status: ${response.status}`);
       
       if (response.status >= 400) {
         throw new ProviderError(

@@ -4,7 +4,7 @@
  * Provides the settings interface for Calcifer plugin configuration.
  */
 
-import { App, PluginSettingTab, Setting, Notice, TextComponent, DropdownComponent } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, TextComponent, DropdownComponent, Modal } from 'obsidian';
 import type CalciferPlugin from '@/../main';
 import { 
   CalciferSettings, 
@@ -235,30 +235,104 @@ export class CalciferSettingsTab extends PluginSettingTab {
     }
 
     // Chat Model
-    new Setting(settings)
+    const chatModelSetting = new Setting(settings)
       .setName('Chat Model')
-      .setDesc('Model to use for chat completions')
-      .addText(text => text
+      .setDesc('Model to use for chat completions');
+
+    let chatModelText: TextComponent;
+    chatModelSetting.addText(text => {
+      chatModelText = text;
+      text
         .setPlaceholder(endpoint.type === 'ollama' ? 'llama3.2' : 'gpt-4o-mini')
         .setValue(endpoint.chatModel)
         .onChange(async (value) => {
           endpoint.chatModel = value;
           await this.plugin.saveSettings();
-        })
-      );
+        });
+    });
+
+    // Add button to fetch and select available models
+    chatModelSetting.addButton(button => button
+      .setButtonText('📋')
+      .setTooltip('Load available models')
+      .onClick(async () => {
+        button.setDisabled(true);
+        try {
+          const provider = this.plugin.providerManager.getProviderById(endpoint.id);
+          if (!provider) {
+            new Notice('Provider not initialized');
+            return;
+          }
+
+          const models = await provider.listModels();
+          if (models.length === 0) {
+            new Notice('No models found');
+            return;
+          }
+
+          // Show model selection modal
+          this.showModelSelectionModal(models, (selectedModel) => {
+            endpoint.chatModel = selectedModel;
+            chatModelText.setValue(selectedModel);
+            this.plugin.saveSettings();
+          });
+        } catch (error) {
+          new Notice(`Failed to load models: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+          button.setDisabled(false);
+        }
+      })
+    );
 
     // Embedding Model
-    new Setting(settings)
+    const embeddingModelSetting = new Setting(settings)
       .setName('Embedding Model')
-      .setDesc('Model to use for generating embeddings')
-      .addText(text => text
+      .setDesc('Model to use for generating embeddings');
+
+    let embeddingModelText: TextComponent;
+    embeddingModelSetting.addText(text => {
+      embeddingModelText = text;
+      text
         .setPlaceholder(endpoint.type === 'ollama' ? 'nomic-embed-text' : 'text-embedding-3-small')
         .setValue(endpoint.embeddingModel)
         .onChange(async (value) => {
           endpoint.embeddingModel = value;
           await this.plugin.saveSettings();
-        })
-      );
+        });
+    });
+
+    // Add button to fetch and select available models
+    embeddingModelSetting.addButton(button => button
+      .setButtonText('📋')
+      .setTooltip('Load available models')
+      .onClick(async () => {
+        button.setDisabled(true);
+        try {
+          const provider = this.plugin.providerManager.getProviderById(endpoint.id);
+          if (!provider) {
+            new Notice('Provider not initialized');
+            return;
+          }
+
+          const models = await provider.listModels();
+          if (models.length === 0) {
+            new Notice('No models found');
+            return;
+          }
+
+          // Show model selection modal
+          this.showModelSelectionModal(models, (selectedModel) => {
+            endpoint.embeddingModel = selectedModel;
+            embeddingModelText.setValue(selectedModel);
+            this.plugin.saveSettings();
+          });
+        } catch (error) {
+          new Notice(`Failed to load models: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } finally {
+          button.setDisabled(false);
+        }
+      })
+    );
 
     // Enable/Disable toggle
     new Setting(settings)
@@ -275,27 +349,39 @@ export class CalciferSettingsTab extends PluginSettingTab {
     // Test connection button
     new Setting(settings)
       .setName('Test Connection')
-      .setDesc('Verify the endpoint is reachable')
+      .setDesc('Verify endpoint connection and model availability')
       .addButton(button => button
-        .setButtonText('Test')
+        .setButtonText('Test Connection')
         .onClick(async () => {
           button.setButtonText('Testing...');
           button.setDisabled(true);
-          
+
           try {
             const health = await this.plugin.providerManager.checkAllHealth();
             const result = health.get(endpoint.id);
-            
+
             if (result?.healthy) {
-              new Notice(`✓ Connection successful (${result.latencyMs}ms)`);
+              const modelInfo = result.modelInfo;
+              let message = `✓ Connection successful (${result.latencyMs}ms)\n`;
+
+              if (modelInfo) {
+                message += `\nChat model "${modelInfo.chatModel}": ${modelInfo.chatAvailable ? '✓ Available' : '✗ Not found'}`;
+                message += `\nEmbedding model "${modelInfo.embeddingModel}": ${modelInfo.embeddingAvailable ? '✓ Available' : '✗ Not found'}`;
+
+                if (!modelInfo.chatAvailable || !modelInfo.embeddingAvailable) {
+                  message += '\n\n⚠️ Some configured models are not available. Click the 📋 button to browse available models.';
+                }
+              }
+
+              new Notice(message, 8000);
             } else {
-              new Notice(`✗ Connection failed: ${result?.error || 'Unknown error'}`);
+              new Notice(`✗ Connection failed: ${result?.error || 'Unknown error'}`, 5000);
             }
           } catch (error) {
-            new Notice(`✗ Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            new Notice(`✗ Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 5000);
           }
-          
-          button.setButtonText('Test');
+
+          button.setButtonText('Test Connection');
           button.setDisabled(false);
         })
       );
@@ -859,19 +945,90 @@ export class CalciferSettingsTab extends PluginSettingTab {
   }
 
   /**
+   * Show modal for selecting a model from a list
+   */
+  private showModelSelectionModal(models: string[], onSelect: (model: string) => void): void {
+    const modal = new ModelSelectionModal(this.app, models, onSelect);
+    modal.open();
+  }
+
+  /**
    * Validate settings and show warnings
    */
   private validateAndShowWarnings(containerEl: HTMLElement): void {
     const errors = validateSettings(this.plugin.settings);
-    
+
     if (errors.length > 0) {
       const warningEl = containerEl.createDiv({ cls: 'calcifer-settings-warnings' });
       warningEl.createEl('h3', { text: '⚠️ Configuration Issues' });
-      
+
       const list = warningEl.createEl('ul');
       for (const error of errors) {
         list.createEl('li', { text: error });
       }
     }
+  }
+}
+
+/**
+ * Modal for selecting a model from a list
+ */
+class ModelSelectionModal extends Modal {
+  private models: string[];
+  private onSelect: (model: string) => void;
+
+  constructor(app: App, models: string[], onSelect: (model: string) => void) {
+    super(app);
+    this.models = models;
+    this.onSelect = onSelect;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl('h2', { text: 'Select Model' });
+
+    const searchContainer = contentEl.createDiv({ cls: 'calcifer-model-search' });
+    const searchInput = searchContainer.createEl('input', {
+      type: 'text',
+      placeholder: 'Search models...',
+    });
+
+    const modelList = contentEl.createDiv({ cls: 'calcifer-model-list' });
+
+    const renderModels = (filter: string = '') => {
+      modelList.empty();
+
+      const filtered = this.models.filter(m =>
+        m.toLowerCase().includes(filter.toLowerCase())
+      );
+
+      if (filtered.length === 0) {
+        modelList.createEl('p', { text: 'No models found', cls: 'calcifer-no-results' });
+        return;
+      }
+
+      for (const model of filtered) {
+        const item = modelList.createDiv({ cls: 'calcifer-model-item' });
+        item.setText(model);
+        item.addEventListener('click', () => {
+          this.onSelect(model);
+          this.close();
+          new Notice(`Selected model: ${model}`);
+        });
+      }
+    };
+
+    searchInput.addEventListener('input', () => {
+      renderModels(searchInput.value);
+    });
+
+    renderModels();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }

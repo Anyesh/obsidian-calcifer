@@ -63,21 +63,48 @@ export class ToolExecutor {
   }
 
   /**
+   * Safely extract a string argument with validation
+   */
+  private getStringArg(args: Record<string, unknown>, key: string, defaultValue: string = ''): string {
+    const value = args[key];
+
+    if (value === undefined || value === null) {
+      return defaultValue;
+    }
+
+    if (typeof value !== 'string') {
+      throw new Error(`Argument "${key}" must be a string, got ${typeof value}`);
+    }
+
+    return value;
+  }
+
+  /**
    * Sanitize a path input for safe file operations
+   * Prevents path traversal and removes dangerous characters
    */
   private sanitizePath(pathInput: string): string {
     let path = pathInput.trim();
-    
+
     // Remove leading/trailing slashes
     path = path.replace(/^\/+|\/+$/g, '');
-    
+
     // Remove potentially dangerous characters
     path = path.replace(/[<>:"|?*]/g, '');
-    
+
     // Normalize multiple slashes
     path = path.replace(/\/+/g, '/');
-    
-    return normalizePath(path);
+
+    // Normalize the path
+    const normalized = normalizePath(path);
+
+    // Security: Prevent path traversal attacks
+    // Check for .. segments or absolute paths that could escape the vault
+    if (normalized.includes('..') || normalized.startsWith('/') || normalized.startsWith('\\')) {
+      throw new Error(`Invalid path: "${pathInput}" attempts to access files outside the vault`);
+    }
+
+    return normalized;
   }
 
   /**
@@ -154,7 +181,7 @@ export class ToolExecutor {
   // === Folder Operations ===
 
   private async createFolder(args: Record<string, unknown>): Promise<ToolResult> {
-    const path = normalizePath(String(args.path));
+    const path = this.sanitizePath(this.getStringArg(args, 'path'));
     
     // Check if folder already exists
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -182,7 +209,7 @@ export class ToolExecutor {
   }
 
   private async deleteFolder(args: Record<string, unknown>): Promise<ToolResult> {
-    const path = normalizePath(String(args.path));
+    const path = this.sanitizePath(this.getStringArg(args, 'path'));
     const force = args.force === true;
     
     const folder = this.app.vault.getAbstractFileByPath(path);
@@ -220,16 +247,16 @@ export class ToolExecutor {
   // === Note Operations ===
 
   private async createNote(args: Record<string, unknown>): Promise<ToolResult> {
-    let path = String(args.path);
-    const content = args.content !== undefined ? String(args.content) : '';
+    let path = this.getStringArg(args, 'path');
+    const content = this.getStringArg(args, 'content', '');
     const overwrite = args.overwrite === true;
-    
+
     // Ensure .md extension
     if (!path.endsWith('.md')) {
       path = path + '.md';
     }
-    
-    path = normalizePath(path);
+
+    path = this.sanitizePath(path);
     
     // Check if file exists
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -266,9 +293,9 @@ export class ToolExecutor {
   }
 
   private async moveNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const sourcePath = String(args.sourcePath);
-    const destinationFolder = this.sanitizePath(String(args.destinationFolder || ''));
-    const newName = args.newName ? String(args.newName) : undefined;
+    const sourcePath = this.getStringArg(args, 'sourcePath');
+    const destinationFolder = this.sanitizePath(this.getStringArg(args, 'destinationFolder', ''));
+    const newName = args.newName ? this.getStringArg(args, 'newName') : undefined;
     
     // Use robust file finding
     const file = this.findFile(sourcePath);
@@ -313,8 +340,8 @@ export class ToolExecutor {
   }
 
   private async renameNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    const newName = String(args.newName);
+    const pathInput = this.getStringArg(args, 'path');
+    const newName = this.getStringArg(args, 'newName');
     
     const file = this.findFile(pathInput);
     
@@ -337,7 +364,7 @@ export class ToolExecutor {
   }
 
   private async deleteNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
+    const pathInput = this.getStringArg(args, 'path');
     
     const file = this.findFile(pathInput);
     
@@ -358,8 +385,8 @@ export class ToolExecutor {
   }
 
   private async appendToNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    const content = String(args.content);
+    const pathInput = this.getStringArg(args, 'path');
+    const content = this.getStringArg(args, 'content');
     
     const file = this.findFile(pathInput);
     
@@ -379,8 +406,8 @@ export class ToolExecutor {
   }
 
   private async prependToNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    const content = String(args.content);
+    const pathInput = this.getStringArg(args, 'path');
+    const content = this.getStringArg(args, 'content');
     
     const file = this.findFile(pathInput);
     
@@ -413,7 +440,7 @@ export class ToolExecutor {
   // === Search & Information ===
 
   private async searchNotes(args: Record<string, unknown>): Promise<ToolResult> {
-    const query = String(args.query).toLowerCase();
+    const query = this.getStringArg(args, 'query').toLowerCase();
     const searchContent = args.searchContent === true;
     
     const files = this.app.vault.getMarkdownFiles();
@@ -433,8 +460,9 @@ export class ToolExecutor {
           if (content.toLowerCase().includes(query)) {
             results.push(file.path);
           }
-        } catch {
-          // Skip files that can't be read
+        } catch (error) {
+          // Log read errors but continue searching other files
+          console.warn(`[Calcifer] Could not read file "${file.path}" during search:`, error);
         }
       }
       
@@ -452,7 +480,8 @@ export class ToolExecutor {
   }
 
   private async listFolderContents(args: Record<string, unknown>): Promise<ToolResult> {
-    const path = normalizePath(String(args.path || ''));
+    const pathInput = this.getStringArg(args, 'path', '');
+    const path = pathInput ? this.sanitizePath(pathInput) : '';
     const recursive = args.recursive === true;
     
     let folder: TAbstractFile | null;
@@ -506,7 +535,7 @@ export class ToolExecutor {
   }
 
   private async getNoteContent(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
+    const pathInput = this.getStringArg(args, 'path');
     
     const file = this.findFile(pathInput);
     
@@ -527,10 +556,13 @@ export class ToolExecutor {
   }
 
   // === Tag Operations ===
+  // Note: Frontmatter operations use processFrontMatter which does read-modify-write.
+  // Multiple simultaneous frontmatter operations on the same file may conflict.
+  // The LLM should avoid calling multiple frontmatter tools on the same file in one response.
 
   private async addTag(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    let tag = String(args.tag);
+    const pathInput = this.getStringArg(args, 'path');
+    let tag = this.getStringArg(args, 'tag');
     
     // Remove # prefix if present
     if (tag.startsWith('#')) {
@@ -565,8 +597,8 @@ export class ToolExecutor {
   }
 
   private async removeTag(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    let tag = String(args.tag);
+    const pathInput = this.getStringArg(args, 'path');
+    let tag = this.getStringArg(args, 'tag');
     
     // Remove # prefix if present
     if (tag.startsWith('#')) {
@@ -610,9 +642,9 @@ export class ToolExecutor {
   // === Frontmatter Operations ===
 
   private async updateFrontmatter(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
-    const property = String(args.property);
-    const valueStr = String(args.value);
+    const pathInput = this.getStringArg(args, 'path');
+    const property = this.getStringArg(args, 'property');
+    const valueStr = this.getStringArg(args, 'value');
     
     const file = this.findFile(pathInput);
     
@@ -644,7 +676,7 @@ export class ToolExecutor {
   // === Navigation ===
 
   private async openNote(args: Record<string, unknown>): Promise<ToolResult> {
-    const pathInput = String(args.path);
+    const pathInput = this.getStringArg(args, 'path');
     const newTab = args.newTab === true;
     
     const file = this.findFile(pathInput);

@@ -441,24 +441,28 @@ export function isModifyingTool(toolName: string): boolean {
 /**
  * Parse tool calls from LLM response
  * Handles multiple formats: code blocks, inline JSON, and nested arguments
+ *
+ * Note: Deduplication only applies within the same parsing method (code blocks vs inline).
+ * This allows legitimate duplicate operations across different blocks.
  */
 export function parseToolCalls(response: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
-  const seenCalls = new Set<string>(); // Deduplication
-  
+  const seenBlockCalls = new Set<string>(); // Dedupe within code blocks only
+
   // Method 1: Match ```tool ... ``` blocks (preferred format)
   const toolBlockRegex = /```tool\s*([\s\S]*?)```/g;
   let match;
-  
+
   while ((match = toolBlockRegex.exec(response)) !== null) {
     try {
       const jsonStr = match[1].trim();
       const parsed = JSON.parse(jsonStr);
-      
+
       if (parsed.tool && typeof parsed.tool === 'string') {
+        // Only dedupe exact same call in adjacent blocks (likely LLM stutter)
         const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
-        if (!seenCalls.has(callKey)) {
-          seenCalls.add(callKey);
+        if (!seenBlockCalls.has(callKey)) {
+          seenBlockCalls.add(callKey);
           toolCalls.push({
             name: parsed.tool,
             arguments: parsed.arguments || {},
@@ -469,43 +473,37 @@ export function parseToolCalls(response: string): ToolCall[] {
       console.warn('[Calcifer] Failed to parse tool call from code block:', error, match[1]);
     }
   }
-  
+
   // Method 2: Match ```json ... ``` blocks (some models use this)
   const jsonBlockRegex = /```json\s*([\s\S]*?)```/g;
   while ((match = jsonBlockRegex.exec(response)) !== null) {
     try {
       const jsonStr = match[1].trim();
       const parsed = JSON.parse(jsonStr);
-      
+
       if (parsed.tool && typeof parsed.tool === 'string') {
-        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
-        if (!seenCalls.has(callKey)) {
-          seenCalls.add(callKey);
-          toolCalls.push({
-            name: parsed.tool,
-            arguments: parsed.arguments || {},
-          });
-        }
+        // Add to toolCalls without strict deduplication for json blocks
+        toolCalls.push({
+          name: parsed.tool,
+          arguments: parsed.arguments || {},
+        });
       }
     } catch (error) {
       // Silently ignore - not all json blocks are tool calls
     }
   }
-  
+
   // Method 3: Try to find JSON objects with "tool" key using balanced brace matching
   // This handles nested objects properly unlike simple regex
   const inlineMatches = findJsonToolCalls(response);
   for (const parsed of inlineMatches) {
-    const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
-    if (!seenCalls.has(callKey)) {
-      seenCalls.add(callKey);
-      toolCalls.push({
-        name: parsed.tool,
-        arguments: parsed.arguments || {},
-      });
-    }
+    // Add inline tool calls without deduplication
+    toolCalls.push({
+      name: parsed.tool,
+      arguments: parsed.arguments || {},
+    });
   }
-  
+
   return toolCalls;
 }
 
@@ -591,16 +589,16 @@ function findJsonToolCalls(text: string): Array<{ tool: string; arguments: Recor
 export function removeToolBlocks(response: string): string {
   // Remove ```tool ... ``` blocks
   let cleaned = response.replace(/```tool\s*[\s\S]*?```/g, '');
-  
-  // Remove ```json blocks that contain tool calls
-  cleaned = cleaned.replace(/```json\s*\{[\s\S]*?"tool"[\s\S]*?\}[\s\S]*?```/g, '');
-  
-  // Remove inline tool call JSON objects (using balanced matching would be better but this is display-only)
-  // We're more aggressive here since it's just for display
-  cleaned = cleaned.replace(/\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}/g, '');
-  
+
+  // Remove ```json blocks that are ONLY tool calls (start with { and "tool" is first property)
+  // This prevents removing legitimate json code examples that happen to mention "tool"
+  cleaned = cleaned.replace(/```json\s*\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"[\s\S]*?```/g, '');
+
+  // Remove inline tool call JSON objects (only if they match the exact tool call format)
+  cleaned = cleaned.replace(/\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}/g, '');
+
   // Clean up extra whitespace
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-  
+
   return cleaned;
 }

@@ -146,7 +146,6 @@ export class VectorStore {
    */
   async upsertBatch(docs: VectorDocument[]): Promise<void> {
     this.ensureInitialized();
-    console.log(`[Calcifer] VectorStore.upsertBatch: ${docs.length} docs`);
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -518,7 +517,6 @@ export class VectorStore {
   async getIndexedPathsWithMtime(): Promise<Map<string, number>> {
     this.ensureInitialized();
     
-    console.time('[Calcifer] VectorStore.getIndexedPathsWithMtime');
     const pathMtimes = new Map<string, number>();
     let docCount = 0;
     
@@ -539,8 +537,6 @@ export class VectorStore {
           }
           cursor.continue();
         } else {
-          console.timeEnd('[Calcifer] VectorStore.getIndexedPathsWithMtime');
-          console.log(`[Calcifer] VectorStore: scanned ${docCount} docs, ${pathMtimes.size} unique paths`);
           resolve(pathMtimes);
         }
       };

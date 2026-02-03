@@ -111,7 +111,6 @@ export class EmbeddingManager {
     this.indexQueue.clear();
     this.isIndexing = false;
     this.progress = null;
-    console.log('[Calcifer] Embedding force stopped');
   }
 
   /**
@@ -151,8 +150,6 @@ export class EmbeddingManager {
    * Index the entire vault
    */
   async indexVault(force: boolean = false): Promise<void> {
-    console.time('[Calcifer] indexVault total');
-    console.log('[Calcifer] indexVault started, force:', force);
     
     if (!this.settings.enableEmbedding) {
       new Notice('Embedding is disabled in settings');
@@ -177,13 +174,11 @@ export class EmbeddingManager {
     
     try {
       // Health check before starting
-      console.log('[Calcifer] Running provider health check...');
       const healthResults = await this.providerManager.checkAllHealth();
       
       // Find the first healthy provider
       let healthCheck = null;
       for (const [id, result] of healthResults) {
-        console.log(`[Calcifer] Provider ${id} health:`, result);
         if (result.healthy) {
           healthCheck = result;
           break;
@@ -206,27 +201,19 @@ export class EmbeddingManager {
         return;
       }
       
-      console.log('[Calcifer] Health check passed, latency:', healthCheck.latencyMs, 'ms');
       
-      console.time('[Calcifer] getMarkdownFiles');
       const files = this.app.vault.getMarkdownFiles()
         .filter(f => !this.shouldExclude(f.path));
-      console.timeEnd('[Calcifer] getMarkdownFiles');
-      console.log('[Calcifer] Total markdown files:', files.length);
       
       // Yield before expensive IndexedDB operation
       await this.yieldToUI();
       
       // Get all indexed paths with mtimes in ONE query (not per-file)
-      console.time('[Calcifer] getIndexedPathsWithMtime');
       const indexedPaths = force ? new Map<string, number>() : await this.vectorStore.getIndexedPathsWithMtime();
-      console.timeEnd('[Calcifer] getIndexedPathsWithMtime');
-      console.log('[Calcifer] Indexed paths count:', indexedPaths.size);
       
       // Yield after IndexedDB operation
       await this.yieldToUI();
       
-      console.time('[Calcifer] filterFilesToIndex');
       const filesToIndex: TFile[] = [];
       
       for (const file of files) {
@@ -239,8 +226,6 @@ export class EmbeddingManager {
           }
         }
       }
-      console.timeEnd('[Calcifer] filterFilesToIndex');
-      console.log('[Calcifer] Files to index:', filesToIndex.length);
       
       if (filesToIndex.length === 0) {
         if (this.settings.showIndexingProgress) {
@@ -263,7 +248,6 @@ export class EmbeddingManager {
       // Process files in small batches with yielding to prevent UI freeze
       const FILES_PER_YIELD = 1; // Process 1 file at a time for maximum responsiveness
       
-      console.log('[Calcifer] Starting file processing loop');
       
       for (let i = 0; i < filesToIndex.length; i++) {
         // Check circuit breaker
@@ -278,12 +262,9 @@ export class EmbeddingManager {
           this.progress!.current = file.basename;
           this.progressCallback?.(this.progress!);
           
-          console.log(`[Calcifer] Processing file ${i + 1}/${filesToIndex.length}: ${file.path}`);
-          console.time(`[Calcifer] indexSingleFile: ${file.basename}`);
           
           await this.indexSingleFile(file);
           
-          console.timeEnd(`[Calcifer] indexSingleFile: ${file.basename}`);
           
           this.progress!.completed++;
           this.consecutiveErrors = 0; // Reset on success
@@ -308,9 +289,7 @@ export class EmbeddingManager {
         
         // Yield to UI after each file to keep responsive
         // Using requestAnimationFrame for smoother UI updates
-        console.log(`[Calcifer] Yielding to UI after file ${i + 1}`);
         await this.yieldToUIFrame();
-        console.log(`[Calcifer] Resumed after yield`);
       }
       
       if (this.settings.showIndexingProgress && !this.circuitBroken) {
@@ -318,12 +297,10 @@ export class EmbeddingManager {
         new Notice(`Indexing complete: ${completed} files, ${errors} errors`);
       }
       
-      console.log('[Calcifer] File processing loop finished');
       
     } finally {
       this.isIndexing = false;
       this.progress = null;
-      console.timeEnd('[Calcifer] indexVault total');
     }
   }
 
@@ -476,54 +453,40 @@ export class EmbeddingManager {
    */
   private async indexSingleFile(file: TFile): Promise<void> {
     // Read file content
-    console.time(`[Calcifer]   cachedRead: ${file.basename}`);
     const content = await this.app.vault.cachedRead(file);
-    console.timeEnd(`[Calcifer]   cachedRead: ${file.basename}`);
-    console.log(`[Calcifer]   Content length: ${content.length} chars`);
     
     // Extract frontmatter
     const metadata = extractFrontmatter(content);
     
     // Chunk the content (synchronous but fast for normal files)
-    console.time(`[Calcifer]   chunkText: ${file.basename}`);
     const chunks = chunkText(content, {
       chunkSize: this.settings.chunkSize,
       overlap: this.settings.chunkOverlap,
     });
-    console.timeEnd(`[Calcifer]   chunkText: ${file.basename}`);
-    console.log(`[Calcifer]   Chunks created: ${chunks.length}`);
     
     if (chunks.length === 0) {
       // File is empty or only frontmatter
-      console.log(`[Calcifer]   No chunks, deleting existing`);
       await this.vectorStore.deleteByPath(file.path);
       return;
     }
     
     // Delete existing chunks for this file
-    console.time(`[Calcifer]   deleteByPath: ${file.basename}`);
     await this.vectorStore.deleteByPath(file.path);
-    console.timeEnd(`[Calcifer]   deleteByPath: ${file.basename}`);
     
     // Generate embeddings in batches
     const documents: VectorDocument[] = [];
     const batchSize = Math.max(1, this.settings.embeddingBatchSize);
-    console.log(`[Calcifer]   Embedding with batchSize: ${batchSize}`);
     
     for (let i = 0; i < chunks.length; i += batchSize) {
-      console.log(`[Calcifer]   Starting batch loop iteration i=${i}`);
       
       // Check if stopped
       if (this.circuitBroken) {
-        console.log(`[Calcifer]   Circuit broken, stopping`);
         throw new Error('Indexing stopped');
       }
       
       const batch = chunks.slice(i, i + batchSize);
-      console.log(`[Calcifer]   Batch sliced: ${batch.length} items`);
       
       // Rate limit - with timeout fallback
-      console.log(`[Calcifer]   Waiting for rate limiter (tokens: ${this.rateLimiter.getAvailableTokens()})`);
       const rateLimitPromise = this.rateLimiter.acquire();
       const rateLimitTimeout = new Promise<void>((resolve) => {
         setTimeout(() => {
@@ -532,18 +495,13 @@ export class EmbeddingManager {
         }, 5000);
       });
       await Promise.race([rateLimitPromise, rateLimitTimeout]);
-      console.log(`[Calcifer]   Rate limiter passed`);
       
       try {
         // Batch embed call - send multiple texts at once
-        console.time(`[Calcifer]   embed API call (batch ${i})`);
-        console.log(`[Calcifer]   Calling embed API for ${batch.length} chunks...`);
         const response = await this.providerManager.embed({
           input: batch.map(chunk => chunk.content),
           model: '', // Use default from provider
         });
-        console.timeEnd(`[Calcifer]   embed API call (batch ${i})`);
-        console.log(`[Calcifer]   Got ${response.embeddings.length} embeddings`);
         
         // Map embeddings back to chunks
         for (let j = 0; j < batch.length && j < response.embeddings.length; j++) {
@@ -566,11 +524,7 @@ export class EmbeddingManager {
     }
     
     // Store all chunks
-    console.time(`[Calcifer]   upsertBatch: ${file.basename}`);
-    console.log(`[Calcifer]   Upserting ${documents.length} documents to IndexedDB`);
     await this.vectorStore.upsertBatch(documents);
-    console.timeEnd(`[Calcifer]   upsertBatch: ${file.basename}`);
-    console.log(`[Calcifer]   File complete: ${file.basename}`);
   }
 
   /**
