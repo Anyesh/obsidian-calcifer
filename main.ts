@@ -58,7 +58,7 @@ export default class CalciferPlugin extends Plugin {
     this.addSettingTab(new CalciferSettingsTab(this.app, this));
     
     // Add ribbon icon
-    this.addRibbonIcon('bot', 'Open Calcifer Chat', () => {
+    this.addRibbonIcon('bot', 'Open Calcifer chat', () => {
       void this.activateChatView();
     });
     
@@ -144,7 +144,7 @@ export default class CalciferPlugin extends Plugin {
       
     } catch (error) {
       console.error('Failed to initialize Calcifer services:', error);
-      new Notice('Calcifer: Failed to initialize. Check console for details.');
+      new Notice('Calcifer: failed to initialize. Check console for details.');
     }
   }
 
@@ -155,14 +155,14 @@ export default class CalciferPlugin extends Plugin {
     // Open chat view
     this.addCommand({
       id: 'open-chat',
-      name: 'Open Chat',
+      name: 'Open chat',
       callback: () => void this.activateChatView(),
     });
     
     // Re-index vault
     this.addCommand({
       id: 'reindex-vault',
-      name: 'Re-index Vault',
+      name: 'Re-index vault',
       callback: async () => {
         if (!this.providerManager.hasAvailableProvider()) {
           new Notice('No provider configured. Add an endpoint first.');
@@ -180,7 +180,7 @@ export default class CalciferPlugin extends Plugin {
     // Stop indexing
     this.addCommand({
       id: 'stop-indexing',
-      name: 'Stop Indexing',
+      name: 'Stop indexing',
       callback: () => {
         this.embeddingManager.forceStop();
         new Notice('Indexing stopped');
@@ -190,7 +190,7 @@ export default class CalciferPlugin extends Plugin {
     // Clear index
     this.addCommand({
       id: 'clear-index',
-      name: 'Clear Embedding Index',
+      name: 'Clear embedding index',
       callback: async () => {
         this.embeddingManager.forceStop();
         await this.vectorStore.clear();
@@ -201,7 +201,7 @@ export default class CalciferPlugin extends Plugin {
     // Index current file
     this.addCommand({
       id: 'index-current-file',
-      name: 'Index Current File',
+      name: 'Index current file',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
@@ -218,7 +218,7 @@ export default class CalciferPlugin extends Plugin {
     // Show memories
     this.addCommand({
       id: 'show-memories',
-      name: 'Show Memories',
+      name: 'Show memories',
       callback: () => {
         new MemoryModal(this.app, this.memoryManager).open();
       },
@@ -227,7 +227,7 @@ export default class CalciferPlugin extends Plugin {
     // Show status
     this.addCommand({
       id: 'show-status',
-      name: 'Show Status',
+      name: 'Show status',
       callback: async () => {
         const stats = await this.vectorStore.getStats();
         const healthResults = await this.providerManager.checkAllHealth();
@@ -260,7 +260,7 @@ export default class CalciferPlugin extends Plugin {
     // Suggest tags for current file
     this.addCommand({
       id: 'suggest-tags',
-      name: 'Suggest Tags for Current Note',
+      name: 'Suggest tags for current note',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
@@ -276,7 +276,7 @@ export default class CalciferPlugin extends Plugin {
     // Suggest folder for current file
     this.addCommand({
       id: 'suggest-folder',
-      name: 'Suggest Folder for Current Note',
+      name: 'Suggest folder for current note',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
@@ -364,7 +364,7 @@ export default class CalciferPlugin extends Plugin {
     }
     
     if (leaf) {
-      workspace.revealLeaf(leaf);
+      void workspace.revealLeaf(leaf);
     }
   }
 
@@ -378,7 +378,7 @@ export default class CalciferPlugin extends Plugin {
     
     // Make status bar clickable to open chat
     this.statusBarItem.onClickEvent(() => {
-      this.activateChatView();
+      void this.activateChatView();
     });
     
     // Subscribe to embedding progress
@@ -434,7 +434,7 @@ export default class CalciferPlugin extends Plugin {
         
       case 'error':
         setIcon(icon, 'alert-circle');
-        text.setText('Calcifer (Error)');
+        text.setText('Calcifer (error)');
         this.statusBarItem.addClass('calcifer-status-error');
         this.statusBarItem.removeClass('calcifer-status-busy');
         break;
@@ -459,8 +459,8 @@ export default class CalciferPlugin extends Plugin {
    * Load plugin settings
    */
   async loadSettings() {
-    const savedData = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData);
+    const savedData = await this.loadData() as Partial<CalciferSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData ?? {});
     
     // Migration: increase timeout if it was the old default of 30 seconds
     // First embedding request can take a long time as model loads into memory

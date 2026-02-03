@@ -124,7 +124,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     // Add endpoint button
     new Setting(containerEl)
-      .setName('Add Endpoint')
+      .setName('Add endpoint')
       .setDesc('Add a new API endpoint configuration')
       .addButton(button => button
         .setButtonText('Add Ollama')
@@ -178,9 +178,9 @@ export class CalciferSettingsTab extends PluginSettingTab {
       value: endpoint.name,
       placeholder: 'Endpoint name'
     });
-    nameInput.addEventListener('change', async () => {
+    nameInput.addEventListener('change', () => {
       endpoint.name = nameInput.value;
-      await this.plugin.saveSettings();
+      void this.plugin.saveSettings();
     });
 
     // Type badge
@@ -193,10 +193,10 @@ export class CalciferSettingsTab extends PluginSettingTab {
     const priorityControls = header.createDiv({ cls: 'calcifer-endpoint-priority' });
     
     const upButton = priorityControls.createEl('button', { text: '↑' });
-    upButton.addEventListener('click', () => this.moveEndpoint(endpoint.id, -1));
+    upButton.addEventListener('click', () => void this.moveEndpoint(endpoint.id, -1));
     
     const downButton = priorityControls.createEl('button', { text: '↓' });
-    downButton.addEventListener('click', () => this.moveEndpoint(endpoint.id, 1));
+    downButton.addEventListener('click', () => void this.moveEndpoint(endpoint.id, 1));
 
     // Settings
     const settings = item.createDiv({ cls: 'calcifer-endpoint-settings' });
@@ -219,7 +219,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     // API Key (OpenAI only)
     if (endpoint.type === 'openai') {
       new Setting(settings)
-        .setName('API Key')
+        .setName('API key')
         .setDesc('Your API key for authentication')
         .addText(text => text
           .setPlaceholder('sk-...')
@@ -233,7 +233,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     // Chat Model
     const chatModelSetting = new Setting(settings)
-      .setName('Chat Model')
+      .setName('Chat model')
       .setDesc('Model to use for chat completions');
 
     let chatModelText: TextComponent;
@@ -283,7 +283,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     // Embedding Model
     const embeddingModelSetting = new Setting(settings)
-      .setName('Embedding Model')
+      .setName('Embedding model')
       .setDesc('Model to use for generating embeddings');
 
     let embeddingModelText: TextComponent;
@@ -345,10 +345,10 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     // Test connection button
     new Setting(settings)
-      .setName('Test Connection')
+      .setName('Test connection')
       .setDesc('Verify endpoint connection and model availability')
       .addButton(button => button
-        .setButtonText('Test Connection')
+        .setButtonText('Test')
         .onClick(async () => {
           button.setButtonText('Testing...');
           button.setDisabled(true);
@@ -378,14 +378,14 @@ export class CalciferSettingsTab extends PluginSettingTab {
             new Notice(`✗ Test failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 5000);
           }
 
-          button.setButtonText('Test Connection');
+          button.setButtonText('Test');
           button.setDisabled(false);
         })
       );
 
     // Delete button
     new Setting(settings)
-      .setName('Delete Endpoint')
+      .setName('Delete endpoint')
       .setDesc('Remove this endpoint configuration')
       .addButton(button => button
         .setButtonText('Delete')
@@ -449,7 +449,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Embedding').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Embedding')
+      .setName('Enable embedding')
       .setDesc('Automatically generate embeddings for vault files')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableEmbedding)
@@ -460,7 +460,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Batch Size')
+      .setName('Batch size')
       .setDesc('Maximum concurrent embedding requests')
       .addSlider(slider => slider
         .setLimits(1, 50, 1)
@@ -474,7 +474,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     this.createNumericSetting(
       containerEl,
-      'Chunk Size',
+      'Chunk size',
       'Characters per text chunk for embedding (100-10000)',
       this.plugin.settings.chunkSize,
       { min: 100, max: 10000, placeholder: '1000' },
@@ -486,7 +486,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     this.createNumericSetting(
       containerEl,
-      'Chunk Overlap',
+      'Chunk overlap',
       'Overlap between chunks to maintain context (0+)',
       this.plugin.settings.chunkOverlap,
       { min: 0, max: 1000, placeholder: '200' },
@@ -497,7 +497,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     );
 
     new Setting(containerEl)
-      .setName('Exclude Patterns')
+      .setName('Exclude patterns')
       .setDesc('Glob patterns to exclude from embedding (one per line)')
       .addTextArea(text => text
         .setValue(this.plugin.settings.embeddingExclude.join('\n'))
@@ -518,7 +518,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('RAG').setHeading();
 
     new Setting(containerEl)
-      .setName('Top K Results')
+      .setName('Top K results')
       .setDesc('Number of context chunks to retrieve')
       .addSlider(slider => slider
         .setLimits(1, 20, 1)
@@ -531,7 +531,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Minimum Score')
+      .setName('Minimum score')
       .setDesc('Minimum similarity score for context inclusion (0-1)')
       .addSlider(slider => slider
         .setLimits(0, 1, 0.05)
@@ -544,7 +544,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Include Frontmatter')
+      .setName('Include frontmatter')
       .setDesc('Include file frontmatter in context')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.ragIncludeFrontmatter)
@@ -556,7 +556,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     this.createNumericSetting(
       containerEl,
-      'Max Context Length',
+      'Max context length',
       'Maximum total context length in characters (1000+)',
       this.plugin.settings.ragMaxContextLength,
       { min: 1000, max: 100000, placeholder: '8000' },
@@ -574,7 +574,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Chat').setHeading();
 
     new Setting(containerEl)
-      .setName('System Prompt')
+      .setName('System prompt')
       .setDesc('Initial instructions for the AI assistant')
       .addTextArea(text => text
         .setValue(this.plugin.settings.systemPrompt)
@@ -585,7 +585,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Include Chat History')
+      .setName('Include chat history')
       .setDesc('Include previous messages in context')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.includeChatHistory)
@@ -596,7 +596,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max History Messages')
+      .setName('Max history messages')
       .setDesc('Maximum number of history messages to include')
       .addSlider(slider => slider
         .setLimits(1, 50, 1)
@@ -623,7 +623,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     this.createNumericSetting(
       containerEl,
-      'Max Tokens',
+      'Max tokens',
       'Maximum tokens in response (100+)',
       this.plugin.settings.chatMaxTokens,
       { min: 100, max: 100000, placeholder: '2048' },
@@ -646,7 +646,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     });
 
     new Setting(containerEl)
-      .setName('Enable Tool Calling')
+      .setName('Enable tool calling')
       .setDesc('Allow Calcifer to execute vault operations (create folders, move notes, etc.)')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableToolCalling)
@@ -657,7 +657,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Require Confirmation')
+      .setName('Require confirmation')
       .setDesc('Ask for confirmation before destructive operations (delete notes/folders)')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.requireToolConfirmation)
@@ -697,7 +697,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Memory').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Memory')
+      .setName('Enable memory')
       .setDesc('Store persistent memories across conversations')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableMemory)
@@ -708,7 +708,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max Memories')
+      .setName('Max memories')
       .setDesc('Maximum number of memories to store')
       .addSlider(slider => slider
         .setLimits(10, 500, 10)
@@ -721,7 +721,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Include in Context')
+      .setName('Include in context')
       .setDesc('Include memories in chat context')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.includeMemoriesInContext)
@@ -733,10 +733,10 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     // Memory management button
     new Setting(containerEl)
-      .setName('Manage Memories')
+      .setName('Manage memories')
       .setDesc(`${this.plugin.memoryManager?.getMemoryCount() ?? 0} memories stored`)
       .addButton(button => button
-        .setButtonText('View & Manage')
+        .setButtonText('View & manage')
         .onClick(() => {
           new MemoryModal(this.app, this.plugin.memoryManager).open();
         })
@@ -750,7 +750,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Auto-tagging').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Auto-Tagging')
+      .setName('Enable auto-tagging')
       .setDesc('Automatically apply tags to notes based on content')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableAutoTag)
@@ -761,7 +761,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Tag Mode')
+      .setName('Tag mode')
       .setDesc('Auto-apply tags automatically, or show a selection modal')
       .addDropdown(dropdown => dropdown
         .addOption('suggest', 'Show selection modal')
@@ -774,7 +774,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max Tags')
+      .setName('Max tags')
       .setDesc('Maximum tags to suggest per note')
       .addSlider(slider => slider
         .setLimits(1, 10, 1)
@@ -787,7 +787,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Use Existing Tags')
+      .setName('Use existing tags')
       .setDesc('Prefer tags already used in the vault')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.useExistingTags)
@@ -798,7 +798,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Confidence Threshold')
+      .setName('Confidence threshold')
       .setDesc('Minimum confidence for auto-apply (0-1)')
       .addSlider(slider => slider
         .setLimits(0.5, 1, 0.05)
@@ -818,7 +818,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Organization').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable Auto-Organization')
+      .setName('Enable auto-organization')
       .setDesc('Suggest folder placement for notes')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableAutoOrganize)
@@ -829,7 +829,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Organization Mode')
+      .setName('Organization mode')
       .setDesc('How to handle folder suggestions')
       .addDropdown(dropdown => dropdown
         .addOption('auto', 'Auto-move')
@@ -842,7 +842,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Confidence Threshold')
+      .setName('Confidence threshold')
       .setDesc('Minimum confidence for auto-move (0-1)')
       .addSlider(slider => slider
         .setLimits(0.5, 1, 0.05)
@@ -862,7 +862,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('UI').setHeading();
 
     new Setting(containerEl)
-      .setName('Show Context Sources')
+      .setName('Show context sources')
       .setDesc('Display source notes in chat responses')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showContextSources)
@@ -873,7 +873,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Show Indexing Progress')
+      .setName('Show indexing progress')
       .setDesc('Display notifications during vault indexing')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showIndexingProgress)
@@ -891,7 +891,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
     new Setting(containerEl).setName('Performance').setHeading();
 
     new Setting(containerEl)
-      .setName('Enable on Mobile')
+      .setName('Enable on mobile')
       .setDesc('Enable plugin features on mobile devices')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableOnMobile)
@@ -902,7 +902,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Rate Limit (RPM)')
+      .setName('Rate limit (RPM)')
       .setDesc('Maximum requests per minute')
       .addSlider(slider => slider
         .setLimits(10, 120, 5)
@@ -915,7 +915,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Request Timeout')
+      .setName('Request timeout')
       .setDesc('Timeout in seconds for API requests')
       .addSlider(slider => slider
         .setLimits(10, 120, 5)
@@ -928,7 +928,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Use Native Fetch')
+      .setName('Use native fetch')
       .setDesc('Use native fetch API instead of Obsidian requestUrl. Enable this if you have connection issues with internal/self-signed certificates.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.useNativeFetch)
@@ -957,7 +957,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     if (errors.length > 0) {
       const warningEl = containerEl.createDiv({ cls: 'calcifer-settings-warnings' });
-      new Setting(warningEl).setName('⚠️ Configuration issues').setHeading();
+      new Setting(warningEl).setName('Configuration issues').setHeading();
 
       const list = warningEl.createEl('ul');
       for (const error of errors) {

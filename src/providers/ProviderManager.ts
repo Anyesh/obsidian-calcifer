@@ -88,7 +88,7 @@ export class ProviderManager {
       default: {
         // Exhaustive check - this should never be reached
         const exhaustiveCheck: never = config.type;
-        throw new Error(`Unknown provider type: ${exhaustiveCheck}`);
+        throw new Error(`Unknown provider type: ${String(exhaustiveCheck)}`);
       }
     }
   }

@@ -125,16 +125,27 @@ export class Logger {
     if (this.config.enableConsole) {
       const prefix = `[Calcifer:${this.module}]`;
       // Only warn, error, debug are allowed by Obsidian plugin guidelines
-      const consoleMethod = level === 'error' ? 'error' :
-                           level === 'warn' ? 'warn' : 'debug';
-      
-      /* eslint-disable no-console */
-      if (data !== undefined) {
-        console[consoleMethod](prefix, message, data);
+      // info logs are mapped to debug
+      if (level === 'error') {
+        if (data !== undefined) {
+          console.error(prefix, message, data);
+        } else {
+          console.error(prefix, message);
+        }
+      } else if (level === 'warn') {
+        if (data !== undefined) {
+          console.warn(prefix, message, data);
+        } else {
+          console.warn(prefix, message);
+        }
       } else {
-        console[consoleMethod](prefix, message);
+        // debug and info both use console.debug
+        if (data !== undefined) {
+          console.debug(prefix, message, data);
+        } else {
+          console.debug(prefix, message);
+        }
       }
-      /* eslint-enable no-console */
     }
   }
 }

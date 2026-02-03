@@ -27,6 +27,13 @@ interface MemoryData {
   version: number;
 }
 
+/**
+ * Plugin data shape that may contain memory data
+ */
+interface PluginData {
+  [key: string]: unknown;
+}
+
 const MEMORY_DATA_KEY = 'calcifer-memories';
 const CURRENT_VERSION = 1;
 
@@ -47,7 +54,7 @@ export class MemoryManager {
    */
   async load(): Promise<void> {
     try {
-      const data = await this.plugin.loadData();
+      const data = await this.plugin.loadData() as PluginData | null;
       const memoryData = data?.[MEMORY_DATA_KEY] as MemoryData | undefined;
       
       if (memoryData && memoryData.version === CURRENT_VERSION) {
@@ -69,7 +76,7 @@ export class MemoryManager {
    */
   async save(): Promise<void> {
     try {
-      const existingData = await this.plugin.loadData() || {};
+      const existingData = (await this.plugin.loadData() as PluginData | null) || {};
       existingData[MEMORY_DATA_KEY] = {
         memories: this.memories,
         version: CURRENT_VERSION,
@@ -198,7 +205,7 @@ export class MemoryManager {
     
     // Save if we updated any
     if (relevant.length > 0) {
-      this.save(); // Don't await, fire and forget
+      void this.save(); // Don't await, fire and forget
     }
     
     return relevant.map(s => s.memory.content);

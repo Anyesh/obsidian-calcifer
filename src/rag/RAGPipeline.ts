@@ -176,7 +176,7 @@ export class RAGPipeline {
             })
             .map(([k, v]) => {
               const value = Array.isArray(v) ? v.join(', ') : String(v);
-              return `${k}: ${value}`;
+              return `${k}: ${String(value)}`;
             })
             .join('\n');
           if (metaStr) {
@@ -391,7 +391,7 @@ Response format: ["memory 1", "memory 2"] or []`;
     if (embeddings.length === 1) return embeddings[0];
     
     const dim = embeddings[0].length;
-    const result = new Array(dim).fill(0);
+    const result: number[] = new Array<number>(dim).fill(0);
     
     for (const emb of embeddings) {
       for (let i = 0; i < dim; i++) {

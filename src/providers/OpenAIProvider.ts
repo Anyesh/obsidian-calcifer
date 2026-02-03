@@ -74,6 +74,25 @@ interface OpenAIErrorResponse {
 }
 
 /**
+ * Streaming chunk from OpenAI API
+ */
+interface OpenAIStreamChunk {
+  id?: string;
+  choices?: Array<{
+    delta?: {
+      content?: string;
+    };
+  }>;
+}
+
+/**
+ * Type guard for OpenAI stream chunk
+ */
+function isOpenAIStreamChunk(data: unknown): data is OpenAIStreamChunk {
+  return typeof data === 'object' && data !== null;
+}
+
+/**
  * OpenAI-Compatible API Provider implementation
  */
 export class OpenAIProvider implements AIProvider {
@@ -238,7 +257,7 @@ export class OpenAIProvider implements AIProvider {
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
+        const errorBody: unknown = await response.json().catch(() => ({}));
         this.handleErrorResponse(response.status, errorBody);
       }
 
@@ -275,12 +294,14 @@ export class OpenAIProvider implements AIProvider {
             }
 
             try {
-              const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content || '';
-              
-              if (delta) {
-                fullContent += delta;
-                onChunk({ content: delta, done: false });
+              const parsed: unknown = JSON.parse(data);
+              if (isOpenAIStreamChunk(parsed)) {
+                const delta = parsed.choices?.[0]?.delta?.content || '';
+                
+                if (delta) {
+                  fullContent += delta;
+                  onChunk({ content: delta, done: false });
+                }
               }
             } catch {
               // Skip malformed JSON lines
@@ -360,7 +381,7 @@ export class OpenAIProvider implements AIProvider {
         // Log detailed error for debugging
         console.error('[Calcifer] listModels request failed:', {
           url,
-          error: error instanceof Error ? error.message : error,
+          error: error instanceof Error ? error.message : String(error),
           stack: error instanceof Error ? error.stack : undefined,
         });
         throw error;
@@ -424,7 +445,7 @@ export class OpenAIProvider implements AIProvider {
       // Log detailed error for debugging
       console.error('[Calcifer] Request failed:', {
         url,
-        error: error instanceof Error ? error.message : error,
+        error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
       throw error;
@@ -439,6 +460,10 @@ export class OpenAIProvider implements AIProvider {
 
   /**
    * Make request using native fetch API
+   */
+  /**
+   * Make request using native fetch API
+   * NOTE: Used when requestUrl fails (self-signed certs, etc.)
    */
   private async requestWithFetch<T>(url: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
     const controller = new AbortController();
@@ -458,7 +483,7 @@ export class OpenAIProvider implements AIProvider {
       const response = await fetch(url, options);
       
       if (response.status >= 400) {
-        const errorBody = await response.json().catch(() => ({}));
+        const errorBody: unknown = await response.json().catch(() => ({}));
         this.handleErrorResponse(response.status, errorBody);
       }
 
@@ -466,7 +491,7 @@ export class OpenAIProvider implements AIProvider {
     } catch (error) {
       console.error('[Calcifer] Fetch request failed:', {
         url,
-        error: error instanceof Error ? error.message : error,
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     } finally {

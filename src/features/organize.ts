@@ -294,7 +294,7 @@ Return a JSON array with up to 3 suggestions:
     if (embeddings.length === 1) return embeddings[0];
     
     const dim = embeddings[0].length;
-    const result = new Array(dim).fill(0);
+    const result: number[] = new Array<number>(dim).fill(0);
     
     for (const emb of embeddings) {
       for (let i = 0; i < dim; i++) {
@@ -357,10 +357,12 @@ class FolderSuggestionModal extends Modal {
         text: suggestion.reason
       });
       
-      item.addEventListener('click', async () => {
-        await this.organizer.moveFile(this.file, suggestion.path);
-        new Notice(`Moved ${this.file.basename} to ${suggestion.path}`);
-        this.close();
+      item.addEventListener('click', () => {
+        void (async () => {
+          await this.organizer.moveFile(this.file, suggestion.path);
+          new Notice(`Moved ${this.file.basename} to ${suggestion.path}`);
+          this.close();
+        })();
       });
     }
 

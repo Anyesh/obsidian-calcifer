@@ -5,7 +5,7 @@
  * Implements ItemView for Obsidian sidebar integration.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon, MarkdownRenderer, Notice } from 'obsidian';
+import { App, ItemView, WorkspaceLeaf, setIcon, MarkdownRenderer, Notice } from 'obsidian';
 import type CalciferPlugin from '@/../main';
 import type { ChatMessage as ProviderMessage } from '@/providers/types';
 
@@ -23,6 +23,14 @@ interface PersistedMessage {
   timestamp: number;
   contextSources?: string[];
   isError?: boolean;
+}
+
+/**
+ * Plugin data that may contain chat history
+ */
+interface ChatPluginData {
+  [CHAT_HISTORY_KEY]?: PersistedMessage[];
+  [key: string]: unknown;
 }
 
 /**
@@ -62,7 +70,7 @@ export class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Calcifer Chat';
+    return 'Calcifer chat';
   }
 
   getIcon(): string {
@@ -70,15 +78,15 @@ export class ChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    const container = this.containerEl.children[1];
+    const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('calcifer-chat-container');
 
     // Create UI structure
-    this.createHeader(container as HTMLElement);
-    this.createMessagesArea(container as HTMLElement);
-    this.createInputArea(container as HTMLElement);
-    this.createStatusBar(container as HTMLElement);
+    this.createHeader(container);
+    this.createMessagesArea(container);
+    this.createInputArea(container);
+    this.createStatusBar(container);
 
     // Load persisted messages or show welcome
     const loaded = await this.loadMessages();
@@ -111,16 +119,17 @@ export class ChatView extends ItemView {
     const clearBtn = actions.createEl('button', { cls: 'calcifer-action-btn' });
     setIcon(clearBtn, 'trash');
     clearBtn.title = 'Clear chat';
-    clearBtn.addEventListener('click', () => this.clearChat());
+    clearBtn.addEventListener('click', () => void this.clearChat());
 
     // Settings button
     const settingsBtn = actions.createEl('button', { cls: 'calcifer-action-btn' });
     setIcon(settingsBtn, 'settings');
     settingsBtn.title = 'Open settings';
     settingsBtn.addEventListener('click', () => {
-      // Open settings tab - use internal command API
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.app as any).commands?.executeCommandById('app:open-settings');
+      // Open settings tab - use Setting object available on app at runtime
+      // This is an internal API not exposed in types but safe to use
+      const appWithSetting = this.app as App & { setting?: { open: () => void } };
+      appWithSetting.setting?.open();
     });
   }
 
@@ -156,7 +165,7 @@ export class ChatView extends ItemView {
     this.inputArea.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        this.sendMessage();
+        void this.sendMessage();
       }
     });
 
@@ -175,7 +184,7 @@ export class ChatView extends ItemView {
       cls: 'calcifer-send-button',
       text: 'Send',
     });
-    this.sendButton.addEventListener('click', () => this.sendMessage());
+    this.sendButton.addEventListener('click', () => void this.sendMessage());
   }
 
   /**
@@ -293,7 +302,7 @@ export class ChatView extends ItemView {
     this.scrollToBottom();
     
     // Auto-save after each message
-    this.saveMessages();
+    void this.saveMessages();
   }
 
   /**
@@ -352,7 +361,7 @@ export class ChatView extends ItemView {
     
     // Render markdown for assistant messages
     if (message.role === 'assistant') {
-      MarkdownRenderer.render(
+      void MarkdownRenderer.render(
         this.app,
         message.content,
         contentEl,
@@ -377,7 +386,7 @@ export class ChatView extends ItemView {
         pill.addEventListener('click', () => {
           const file = this.app.vault.getFileByPath(source);
           if (file) {
-            this.app.workspace.openLinkText(source, '', false);
+            void this.app.workspace.openLinkText(source, '', false);
           }
         });
       }
@@ -449,7 +458,7 @@ export class ChatView extends ItemView {
    */
   private async saveMessages(): Promise<void> {
     try {
-      const data = await this.plugin.loadData() || {};
+      const data = (await this.plugin.loadData() as ChatPluginData | null) || {};
       
       // Convert to serializable format, limit count
       const toSave: PersistedMessage[] = this.messages
@@ -475,8 +484,8 @@ export class ChatView extends ItemView {
    */
   private async loadMessages(): Promise<boolean> {
     try {
-      const data = await this.plugin.loadData();
-      const saved = data?.[CHAT_HISTORY_KEY] as PersistedMessage[] | undefined;
+      const data = await this.plugin.loadData() as ChatPluginData | null;
+      const saved = data?.[CHAT_HISTORY_KEY];
       
       if (!saved || !Array.isArray(saved) || saved.length === 0) {
         return false;

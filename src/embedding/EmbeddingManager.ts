@@ -70,7 +70,7 @@ export class EmbeddingManager {
     
     // Create debounced queue processor
     this.processQueue = debounce(() => {
-      this.processIndexQueue();
+      void this.processIndexQueue();
     }, settings.embeddingDebounceMs);
   }
 
@@ -86,7 +86,7 @@ export class EmbeddingManager {
     // Recreate debounced function if delay changed
     if (debounceChanged) {
       this.processQueue = debounce(() => {
-        this.processIndexQueue();
+        void this.processIndexQueue();
       }, settings.embeddingDebounceMs);
     }
     
@@ -178,7 +178,7 @@ export class EmbeddingManager {
       
       // Find the first healthy provider
       let healthCheck = null;
-      for (const [_id, result] of healthResults) {
+      for (const [, result] of healthResults) {
         if (result.healthy) {
           healthCheck = result;
           break;
@@ -234,12 +234,13 @@ export class EmbeddingManager {
         return;
       }
       
-      this.progress = {
+      const progress: IndexingProgress = {
         total: filesToIndex.length,
         completed: 0,
         current: '',
         errors: 0,
       };
+      this.progress = progress;
       
       if (this.settings.showIndexingProgress) {
         new Notice(`Starting to index ${filesToIndex.length} files...`);
@@ -259,33 +260,33 @@ export class EmbeddingManager {
         const file = filesToIndex[i];
         
         try {
-          this.progress!.current = file.basename;
-          this.progressCallback?.(this.progress!);
+          progress.current = file.basename;
+          this.progressCallback?.(progress);
           
           
           await this.indexSingleFile(file);
           
           
-          this.progress!.completed++;
+          progress.completed++;
           this.consecutiveErrors = 0; // Reset on success
           
         } catch (error) {
           console.error(`Failed to index ${file.path}:`, error);
-          this.progress!.errors++;
+          progress.errors++;
           
           const errorMessage = error instanceof Error ? error.message : String(error);
           if (this.isConnectionError(errorMessage)) {
             this.consecutiveErrors++;
             if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
               this.circuitBroken = true;
-              new Notice('Calcifer: Indexing paused - connection error. Check API settings.', 10000);
+              new Notice('Calcifer: indexing paused - connection error. Check API settings.', 10000);
               break;
             }
           }
         }
         
         // Update progress every file
-        this.progressCallback?.(this.progress!);
+        this.progressCallback?.(progress);
         
         // Yield to UI after each file to keep responsive
         // Using requestAnimationFrame for smoother UI updates
@@ -293,7 +294,7 @@ export class EmbeddingManager {
       }
       
       if (this.settings.showIndexingProgress && !this.circuitBroken) {
-        const { completed, errors } = this.progress!;
+        const { completed, errors } = progress;
         new Notice(`Indexing complete: ${completed} files, ${errors} errors`);
       }
       
@@ -402,7 +403,7 @@ export class EmbeddingManager {
               
               if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
                 this.circuitBroken = true;
-                new Notice('Calcifer: Indexing paused due to connection errors. Check your API endpoint settings.', 10000);
+                new Notice('Calcifer: indexing paused due to connection errors. Check your API endpoint settings.', 10000);
                 break;
               }
             }
@@ -417,7 +418,7 @@ export class EmbeddingManager {
       
       // Process any files added during indexing (only if circuit not broken)
       if (this.indexQueue.size > 0 && !this.circuitBroken) {
-        this.processQueue();
+        void this.processQueue();
       }
     }
   }

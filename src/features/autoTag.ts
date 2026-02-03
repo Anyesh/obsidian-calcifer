@@ -11,6 +11,14 @@ import type { CalciferSettings } from '@/settings';
 import { debounce } from '@/utils/debounce';
 
 /**
+ * Frontmatter structure for notes
+ */
+interface Frontmatter {
+  tags?: string | string[];
+  [key: string]: unknown;
+}
+
+/**
  * Tag suggestion with confidence
  */
 export interface TagSuggestion {
@@ -51,7 +59,7 @@ export class AutoTagger {
     
     // Debounced queue processor
     this.processQueue = debounce(() => {
-      this.processTagQueue();
+      void this.processTagQueue();
     }, 5000); // Wait 5 seconds before processing
   }
 
@@ -208,9 +216,9 @@ Example output: [{"tag": "anime", "confidence": 0.95}, {"tag": "comedy", "confid
   async applyTags(file: TFile, tags: string[]): Promise<void> {
     if (tags.length === 0) return;
     
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
       const existingTags = fm.tags || [];
-      const tagsArray = Array.isArray(existingTags) ? existingTags : [existingTags];
+      const tagsArray: string[] = Array.isArray(existingTags) ? existingTags : [existingTags];
       
       // Add new tags, avoiding duplicates
       for (const tag of tags) {
@@ -442,7 +450,7 @@ class TagSuggestionModal extends Modal {
     // Action buttons
     new Setting(contentEl)
       .addButton(button => button
-        .setButtonText('Apply Selected')
+        .setButtonText('Apply selected')
         .setCta()
         .onClick(async () => {
           if (this.selectedTags.size > 0) {

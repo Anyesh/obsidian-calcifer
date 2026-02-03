@@ -74,7 +74,7 @@ class ToolConfirmationModal extends Modal {
     contentEl.empty();
     contentEl.addClass('calcifer-confirmation-modal');
 
-    contentEl.createEl('h2', { text: '⚠️ Confirm Action' });
+    contentEl.createEl('h2', { text: 'Confirm action' });
 
     contentEl.createEl('p', {
       text: `Calcifer wants to execute a ${isDestructiveTool(this.toolCall.name) ? 'destructive' : 'modifying'} action:`,
@@ -88,7 +88,7 @@ class ToolConfirmationModal extends Modal {
 
     if (isDestructiveTool(this.toolCall.name)) {
       contentEl.createEl('p', {
-        text: '⚠️ This action may delete data permanently!',
+        text: 'This action may delete data permanently.',
         cls: 'calcifer-warning',
       });
     }

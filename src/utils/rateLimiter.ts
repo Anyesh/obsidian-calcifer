@@ -139,7 +139,7 @@ export class ConcurrencyLimiter {
       };
 
       if (this.running < this.maxConcurrency) {
-        execute();
+        void execute();
       } else {
         this.queue.push(execute);
       }
@@ -149,7 +149,7 @@ export class ConcurrencyLimiter {
   private processQueue(): void {
     while (this.running < this.maxConcurrency && this.queue.length > 0) {
       const next = this.queue.shift()!;
-      next();
+      void next();
     }
   }
 }

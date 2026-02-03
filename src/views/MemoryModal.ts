@@ -13,9 +13,9 @@ import type { MemoryManager } from '@/features/memory';
  */
 class ConfirmationModal extends Modal {
   private message: string;
-  private onConfirm: () => void;
+  private onConfirm: () => void | Promise<void>;
 
-  constructor(app: App, message: string, onConfirm: () => void) {
+  constructor(app: App, message: string, onConfirm: () => void | Promise<void>) {
     super(app);
     this.message = message;
     this.onConfirm = onConfirm;
@@ -38,8 +38,7 @@ class ConfirmationModal extends Modal {
       cls: 'mod-warning'
     });
     confirmBtn.addEventListener('click', () => {
-      this.onConfirm();
-      this.close();
+      void Promise.resolve(this.onConfirm()).then(() => this.close());
     });
   }
 
@@ -66,7 +65,7 @@ export class MemoryModal extends Modal {
     contentEl.addClass('calcifer-memory-modal');
 
     // Header
-    contentEl.createEl('h2', { text: 'Calcifer Memories' });
+    contentEl.createEl('h2', { text: 'Calcifer memories' });
     contentEl.createEl('p', {
       text: 'These are facts and preferences Calcifer has learned from your conversations.',
       cls: 'calcifer-memory-description'
@@ -77,17 +76,17 @@ export class MemoryModal extends Modal {
     
     // Add new memory button
     new Setting(actionsBar)
-      .setName('Add Memory')
+      .setName('Add memory')
       .addButton(button => button
-        .setButtonText('+ Add')
+        .setButtonText('+ add')
         .onClick(() => this.showAddMemoryDialog())
       );
 
     // Clear all button
     new Setting(actionsBar)
-      .setName('Clear All')
+      .setName('Clear all')
       .addButton(button => button
-        .setButtonText('Clear All')
+        .setButtonText('Clear all')
         .setWarning()
         .onClick(() => {
           new ConfirmationModal(
@@ -174,10 +173,12 @@ export class MemoryModal extends Modal {
     // Delete button
     const deleteBtn = actions.createEl('button', { cls: 'calcifer-memory-btn calcifer-memory-btn-danger' });
     deleteBtn.setText('Delete');
-    deleteBtn.addEventListener('click', async () => {
-      await this.memoryManager.deleteMemory(memory.id);
-      this.renderMemories();
-      new Notice('Memory deleted');
+    deleteBtn.addEventListener('click', () => {
+      void (async () => {
+        await this.memoryManager.deleteMemory(memory.id);
+        this.renderMemories();
+        new Notice('Memory deleted');
+      })();
     });
   }
 
@@ -223,10 +224,10 @@ export class MemoryModal extends Modal {
  */
 class AddEditMemoryModal extends Modal {
   private memory: Memory | null;
-  private onSave: (content: string) => void;
+  private onSave: (content: string) => void | Promise<void>;
   private textArea: TextAreaComponent | null = null;
 
-  constructor(app: App, memory: Memory | null, onSave: (content: string) => void) {
+  constructor(app: App, memory: Memory | null, onSave: (content: string) => void | Promise<void>) {
     super(app);
     this.memory = memory;
     this.onSave = onSave;
@@ -236,17 +237,17 @@ class AddEditMemoryModal extends Modal {
     const { contentEl } = this;
 
     contentEl.createEl('h3', { 
-      text: this.memory ? 'Edit Memory' : 'Add Memory' 
+      text: this.memory ? 'Edit memory' : 'Add memory' 
     });
 
     // Text area for memory content
     new Setting(contentEl)
-      .setName('Memory Content')
+      .setName('Memory content')
       .setDesc('A fact or preference to remember')
       .addTextArea(text => {
         this.textArea = text;
         text
-          .setPlaceholder('e.g., User prefers concise answers')
+          .setPlaceholder('e.g., user prefers concise answers')
           .setValue(this.memory?.content || '');
         text.inputEl.rows = 4;
         text.inputEl.addClass('calcifer-memory-textarea');
@@ -265,8 +266,7 @@ class AddEditMemoryModal extends Modal {
     saveBtn.addEventListener('click', () => {
       const content = this.textArea?.getValue().trim();
       if (content) {
-        this.onSave(content);
-        this.close();
+        void Promise.resolve(this.onSave(content)).then(() => this.close());
       } else {
         new Notice('Memory content cannot be empty');
       }

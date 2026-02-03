@@ -9,6 +9,14 @@ import { App, TFile, TFolder, TAbstractFile, normalizePath } from 'obsidian';
 import { ToolCall, ToolResult, getToolByName } from './definitions';
 
 /**
+ * Frontmatter type for processFrontMatter callback
+ */
+interface Frontmatter {
+  tags?: string | string[];
+  [key: string]: unknown;
+}
+
+/**
  * Executes tools in the Obsidian vault
  */
 export class ToolExecutor {
@@ -152,7 +160,7 @@ export class ToolExecutor {
         case 'search_notes':
           return await this.searchNotes(toolCall.arguments);
         case 'list_folder_contents':
-          return await this.listFolderContents(toolCall.arguments);
+          return this.listFolderContents(toolCall.arguments);
         case 'get_note_content':
           return await this.getNoteContent(toolCall.arguments);
         case 'add_tag':
@@ -582,7 +590,7 @@ export class ToolExecutor {
       };
     }
     
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Frontmatter) => {
       if (!frontmatter.tags) {
         frontmatter.tags = [];
       }
@@ -620,7 +628,7 @@ export class ToolExecutor {
     
     let removed = false;
     
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Frontmatter) => {
       if (frontmatter.tags) {
         if (Array.isArray(frontmatter.tags)) {
           const index = frontmatter.tags.indexOf(tag);
@@ -667,7 +675,7 @@ export class ToolExecutor {
       value = valueStr;
     }
     
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+    await this.app.fileManager.processFrontMatter(file, (frontmatter: Frontmatter) => {
       frontmatter[property] = value;
     });
     

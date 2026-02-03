@@ -203,7 +203,10 @@ export class VectorStore {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get(id);
 
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => {
+        const result = request.result as VectorDocument | undefined;
+        resolve(result ?? null);
+      };
       request.onerror = () => reject(new Error(`Failed to get: ${request.error?.message}`));
     });
   }

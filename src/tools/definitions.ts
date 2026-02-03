@@ -437,6 +437,23 @@ export function isModifyingTool(toolName: string): boolean {
 }
 
 /**
+ * Type guard to check if parsed JSON is a valid tool call structure
+ */
+interface ParsedToolCall {
+  tool: string;
+  arguments?: Record<string, unknown>;
+}
+
+function isParsedToolCall(value: unknown): value is ParsedToolCall {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'tool' in value &&
+    typeof (value as Record<string, unknown>).tool === 'string'
+  );
+}
+
+/**
  * Parse tool calls from LLM response
  * Handles multiple formats: code blocks, inline JSON, and nested arguments
  *
@@ -454,16 +471,16 @@ export function parseToolCalls(response: string): ToolCall[] {
   while ((match = toolBlockRegex.exec(response)) !== null) {
     try {
       const jsonStr = match[1].trim();
-      const parsed = JSON.parse(jsonStr);
+      const parsed: unknown = JSON.parse(jsonStr);
 
-      if (parsed.tool && typeof parsed.tool === 'string') {
+      if (isParsedToolCall(parsed)) {
         // Only dedupe exact same call in adjacent blocks (likely LLM stutter)
-        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
+        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments ?? {} });
         if (!seenBlockCalls.has(callKey)) {
           seenBlockCalls.add(callKey);
           toolCalls.push({
             name: parsed.tool,
-            arguments: parsed.arguments || {},
+            arguments: parsed.arguments ?? {},
           });
         }
       }
@@ -477,20 +494,20 @@ export function parseToolCalls(response: string): ToolCall[] {
   while ((match = jsonBlockRegex.exec(response)) !== null) {
     try {
       const jsonStr = match[1].trim();
-      const parsed = JSON.parse(jsonStr);
+      const parsed: unknown = JSON.parse(jsonStr);
 
-      if (parsed.tool && typeof parsed.tool === 'string') {
+      if (isParsedToolCall(parsed)) {
         // Dedupe against already found tool calls
-        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
+        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments ?? {} });
         if (!seenBlockCalls.has(callKey)) {
           seenBlockCalls.add(callKey);
           toolCalls.push({
             name: parsed.tool,
-            arguments: parsed.arguments || {},
+            arguments: parsed.arguments ?? {},
           });
         }
       }
-    } catch (error) {
+    } catch {
       // Silently ignore - not all json blocks are tool calls
     }
   }
@@ -504,12 +521,12 @@ export function parseToolCalls(response: string): ToolCall[] {
   const inlineMatches = findJsonToolCalls(textWithoutCodeBlocks);
   for (const parsed of inlineMatches) {
     // Dedupe against already found tool calls
-    const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
+    const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments ?? {} });
     if (!seenBlockCalls.has(callKey)) {
       seenBlockCalls.add(callKey);
       toolCalls.push({
         name: parsed.tool,
-        arguments: parsed.arguments || {},
+        arguments: parsed.arguments ?? {},
       });
     }
   }
@@ -578,11 +595,11 @@ function findJsonToolCalls(text: string): Array<{ tool: string; arguments: Recor
     // Extract and parse the JSON
     const jsonStr = text.substring(braceStart, braceEnd + 1);
     try {
-      const parsed = JSON.parse(jsonStr);
-      if (parsed.tool && typeof parsed.tool === 'string') {
+      const parsed: unknown = JSON.parse(jsonStr);
+      if (isParsedToolCall(parsed)) {
         results.push({
           tool: parsed.tool,
-          arguments: parsed.arguments || {},
+          arguments: parsed.arguments ?? {},
         });
       }
     } catch {

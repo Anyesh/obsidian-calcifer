@@ -22,21 +22,6 @@ import type { EndpointConfig } from '@/settings';
 /**
  * Ollama API response types
  */
-interface _OllamaGenerateResponse {
-  model: string;
-  created_at: string;
-  response: string;
-  done: boolean;
-  done_reason?: string;
-  context?: number[];
-  total_duration?: number;
-  load_duration?: number;
-  prompt_eval_count?: number;
-  prompt_eval_duration?: number;
-  eval_count?: number;
-  eval_duration?: number;
-}
-
 interface OllamaChatResponse {
   model: string;
   created_at: string;
@@ -171,6 +156,11 @@ export class OllamaProvider implements AIProvider {
   /**
    * Streaming chat completion
    * Uses native fetch API to parse Ollama's NDJSON stream
+   * 
+   * NOTE: We use native fetch here instead of requestUrl because:
+   * - requestUrl doesn't support ReadableStream for incremental streaming
+   * - Streaming is essential for UX to show tokens as they arrive
+   * - Falls back to non-streaming if fetch is unavailable (mobile)
    */
   async chatStream(
     request: ChatRequest,
@@ -213,7 +203,7 @@ export class OllamaProvider implements AIProvider {
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
+        const errorBody: unknown = await response.json().catch(() => ({}));
         this.handleErrorResponse(response.status, errorBody);
       }
 
@@ -388,6 +378,7 @@ export class OllamaProvider implements AIProvider {
 
   /**
    * Make request using native fetch API
+   * NOTE: Used when requestUrl fails (self-signed certs, etc.)
    */
   private async requestWithFetch<T>(url: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
     const controller = new AbortController();
