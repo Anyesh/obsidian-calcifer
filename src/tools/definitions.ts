@@ -358,17 +358,17 @@ export function generateToolDescriptions(): string {
     '',
     '**YOU HAVE THE ABILITY TO EXECUTE ACTIONS IN THE VAULT.**',
     '',
-    'When the user asks you to perform an action (create, move, delete, rename, etc.), you MUST use the tools provided.',
+    'When the user asks you to create, save, move, delete, or modify anything, you MUST use the tools provided.',
     '',
     '### ❌ WRONG - Do NOT do this:',
-    'User: "Create an Inbox folder"',
-    'Assistant: "I\'ve created the Inbox folder for you."  ← THIS IS A LIE. You did nothing!',
+    'User: "Create a note about codecs"',
+    'Assistant: "Here\'s information about codecs: [content]"  ← WRONG! You just displayed text, nothing was saved!',
     '',
     '### ✅ CORRECT - Do this instead:',
-    'User: "Create an Inbox folder"',
-    'Assistant: I\'ll create the Inbox folder now.',
+    'User: "Create a note about codecs"',
+    'Assistant: I\'ll create a note about codecs.',
     '```tool',
-    '{"tool": "create_folder", "arguments": {"path": "Inbox"}}',
+    '{"tool": "create_note", "arguments": {"path": "Codecs", "content": "# Codecs\\n\\nCodecs are..."}}',
     '```',
     '',
     '### How to Call Tools',
@@ -379,20 +379,18 @@ export function generateToolDescriptions(): string {
     '{"tool": "tool_name", "arguments": {"param1": "value1"}}',
     '```',
     '',
-    'For multiple actions, include multiple tool blocks:',
+    '### CRITICAL RULES:',
+    '1. **CREATE NOTE**: If user asks to "create a note", "save this", "make a note about X" → USE `create_note` tool',
+    '2. **CREATE FOLDER**: If user asks to create a folder → USE `create_folder` tool',
+    '3. **NEVER** just output content and assume it will be saved - it won\'t!',
+    '4. The tool block EXECUTES the action - without it, NOTHING HAPPENS',
+    '5. Put the full content inside the tool arguments, not outside the tool block',
+    '6. **DO NOT** repeat or summarize the content after the tool block - results are shown automatically',
     '',
+    '### Example - Creating a Note:',
     '```tool',
-    '{"tool": "create_folder", "arguments": {"path": "Inbox"}}',
+    '{"tool": "create_note", "arguments": {"path": "My New Note", "content": "# Title\\n\\nContent goes here..."}}',
     '```',
-    '```tool',
-    '{"tool": "move_note", "arguments": {"sourcePath": "Welcome", "destinationFolder": "Inbox"}}',
-    '```',
-    '',
-    '### RULES:',
-    '1. If user asks to CREATE/MOVE/DELETE/RENAME anything → USE A TOOL',
-    '2. NEVER say "I\'ve done X" without including a tool block',
-    '3. The tool block EXECUTES the action - without it, nothing happens',
-    '4. You can add a brief message before/after the tool block',
     '',
     '### Available Tools:',
     '',
@@ -482,11 +480,15 @@ export function parseToolCalls(response: string): ToolCall[] {
       const parsed = JSON.parse(jsonStr);
 
       if (parsed.tool && typeof parsed.tool === 'string') {
-        // Add to toolCalls without strict deduplication for json blocks
-        toolCalls.push({
-          name: parsed.tool,
-          arguments: parsed.arguments || {},
-        });
+        // Dedupe against already found tool calls
+        const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
+        if (!seenBlockCalls.has(callKey)) {
+          seenBlockCalls.add(callKey);
+          toolCalls.push({
+            name: parsed.tool,
+            arguments: parsed.arguments || {},
+          });
+        }
       }
     } catch (error) {
       // Silently ignore - not all json blocks are tool calls
@@ -494,14 +496,22 @@ export function parseToolCalls(response: string): ToolCall[] {
   }
 
   // Method 3: Try to find JSON objects with "tool" key using balanced brace matching
-  // This handles nested objects properly unlike simple regex
-  const inlineMatches = findJsonToolCalls(response);
+  // Only search text OUTSIDE of code blocks to avoid double-parsing
+  const textWithoutCodeBlocks = response
+    .replace(/```[\s\S]*?```/g, '') // Remove all code blocks
+    .replace(/`[^`]+`/g, '');       // Remove inline code
+
+  const inlineMatches = findJsonToolCalls(textWithoutCodeBlocks);
   for (const parsed of inlineMatches) {
-    // Add inline tool calls without deduplication
-    toolCalls.push({
-      name: parsed.tool,
-      arguments: parsed.arguments || {},
-    });
+    // Dedupe against already found tool calls
+    const callKey = JSON.stringify({ tool: parsed.tool, args: parsed.arguments || {} });
+    if (!seenBlockCalls.has(callKey)) {
+      seenBlockCalls.add(callKey);
+      toolCalls.push({
+        name: parsed.tool,
+        arguments: parsed.arguments || {},
+      });
+    }
   }
 
   return toolCalls;
@@ -584,18 +594,30 @@ function findJsonToolCalls(text: string): Array<{ tool: string; arguments: Recor
 }
 
 /**
- * Remove tool call blocks from response for clean display
+ * Remove tool call blocks from response for clean display.
+ * IMPORTANT: Only keeps text BEFORE the first tool block.
+ * Everything after tool blocks is discarded because:
+ * 1. Tool results are shown separately via "Actions performed"
+ * 2. LLMs often redundantly repeat content after tool blocks
  */
 export function removeToolBlocks(response: string): string {
-  // Remove ```tool ... ``` blocks
-  let cleaned = response.replace(/```tool\s*[\s\S]*?```/g, '');
+  // Find the first tool block (```tool or ```json with tool call)
+  const toolBlockMatch = response.match(/```(?:tool|json)\s*\{[\s\S]*?"tool"\s*:/);
+  const inlineToolMatch = response.match(/\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:/);
 
-  // Remove ```json blocks that are ONLY tool calls (start with { and "tool" is first property)
-  // This prevents removing legitimate json code examples that happen to mention "tool"
-  cleaned = cleaned.replace(/```json\s*\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"[\s\S]*?```/g, '');
+  // Find the earliest tool call position
+  let cutoffIndex = response.length;
 
-  // Remove inline tool call JSON objects (only if they match the exact tool call format)
-  cleaned = cleaned.replace(/\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}/g, '');
+  if (toolBlockMatch && toolBlockMatch.index !== undefined) {
+    cutoffIndex = Math.min(cutoffIndex, toolBlockMatch.index);
+  }
+
+  if (inlineToolMatch && inlineToolMatch.index !== undefined) {
+    cutoffIndex = Math.min(cutoffIndex, inlineToolMatch.index);
+  }
+
+  // Only keep content BEFORE the first tool call
+  let cleaned = response.substring(0, cutoffIndex);
 
   // Clean up extra whitespace
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
