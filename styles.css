@@ -389,6 +389,61 @@
 }
 
 /* ============================================
+   Tag Suggestion Modal
+   ============================================ */
+.calcifer-tag-modal-desc {
+  color: var(--text-muted);
+  margin-bottom: var(--size-4-2);
+}
+
+.calcifer-tag-suggestions {
+  margin: var(--size-4-3) 0;
+}
+
+.calcifer-tag-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  margin-bottom: var(--size-4-2);
+  transition: background-color 0.15s ease;
+}
+
+.calcifer-tag-suggestion:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.calcifer-tag-suggestion input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.calcifer-tag-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  cursor: pointer;
+}
+
+.calcifer-tag-name {
+  font-weight: var(--font-medium);
+  color: var(--text-accent);
+}
+
+.calcifer-tag-confidence {
+  font-size: var(--font-smaller);
+  font-weight: var(--font-normal);
+  color: var(--text-on-accent);
+  background-color: var(--interactive-accent);
+  padding: var(--size-2-1) var(--size-4-2);
+  border-radius: var(--radius-s);
+}
+
+/* ============================================
    Memory Management
    ============================================ */
 .calcifer-memory-list {

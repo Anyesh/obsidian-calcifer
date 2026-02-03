@@ -89,9 +89,9 @@ export interface CalciferSettings {
   // === Auto-Tagging Settings ===
   /** Enable auto-tagging feature */
   enableAutoTag: boolean;
-  /** Auto-apply tags or suggest only */
+  /** Auto-apply tags or show selection modal */
   autoTagMode: 'auto' | 'suggest';
-  /** Maximum tags to suggest per note */
+  /** Maximum tags to generate per note */
   maxTagSuggestions: number;
   /** Use existing vault tags as reference */
   useExistingTags: boolean;
@@ -189,9 +189,9 @@ You respond with tool blocks:
   maxMemories: 100,
   includeMemoriesInContext: true,
   
-  // Auto-tagging
-  enableAutoTag: true,
-  autoTagMode: 'auto',
+  // Auto-tagging (disabled by default - opt-in feature)
+  enableAutoTag: false,
+  autoTagMode: 'suggest',
   maxTagSuggestions: 5,
   useExistingTags: true,
   autoTagConfidence: 0.8,

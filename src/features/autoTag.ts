@@ -4,7 +4,7 @@
  * Suggests or automatically applies tags to notes based on content.
  */
 
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile, Notice, Modal, Setting } from 'obsidian';
 import { ProviderManager } from '@/providers/ProviderManager';
 import { VectorStore } from '@/vectorstore/VectorStore';
 import type { CalciferSettings } from '@/settings';
@@ -56,11 +56,24 @@ export class AutoTagger {
   }
 
   /**
-   * Queue a file for tagging
+   * Queue a file for tagging (only for truly new files without existing tags)
    */
   queueFile(path: string): void {
     if (!this.settings.enableAutoTag) return;
     if (this.circuitBroken) return;
+    
+    // Only queue in 'auto' mode - 'suggest' mode requires manual invocation
+    if (this.settings.autoTagMode !== 'auto') return;
+    
+    // Check if file already has tags (skip if it does - not a truly new file)
+    const file = this.app.vault.getFileByPath(path);
+    if (file instanceof TFile) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (cache?.frontmatter?.tags || (cache?.tags && cache.tags.length > 0)) {
+        // File already has tags, skip auto-tagging
+        return;
+      }
+    }
     
     this.tagQueue.add(path);
     this.processQueue();
@@ -84,7 +97,43 @@ export class AutoTagger {
   }
 
   /**
-   * Suggest tags for a file
+   * Show tag suggestions modal for a file (manual invocation)
+   */
+  async showTagSuggestions(file: TFile): Promise<void> {
+    new Notice('Analyzing note for tag suggestions...');
+    
+    try {
+      const suggestions = await this.suggestTags(file);
+      
+      if (suggestions.length === 0) {
+        new Notice('No tag suggestions found');
+        return;
+      }
+      
+      if (this.settings.autoTagMode === 'auto') {
+        // Auto-apply high-confidence tags
+        const highConfidence = suggestions
+          .filter(s => s.confidence >= this.settings.autoTagConfidence)
+          .map(s => s.tag);
+        
+        if (highConfidence.length > 0) {
+          await this.applyTags(file, highConfidence);
+          new Notice(`Added tags: ${highConfidence.join(', ')}`);
+        } else {
+          new Notice('No tags met the confidence threshold');
+        }
+      } else {
+        // Show tag suggestion modal
+        new TagSuggestionModal(this.app, file, suggestions, this).open();
+      }
+    } catch (error) {
+      console.error('Tag suggestion failed:', error);
+      new Notice('Failed to generate tag suggestions');
+    }
+  }
+
+  /**
+   * Suggest tags for a file (returns suggestions, no UI)
    */
   async suggestTags(file: TFile): Promise<TagSuggestion[]> {
     const content = await this.app.vault.cachedRead(file);
@@ -102,7 +151,15 @@ export class AutoTagger {
         messages: [
           {
             role: 'system',
-            content: 'You are a tag suggestion assistant. Analyze the content and suggest relevant tags. Return ONLY a JSON array of objects with "tag" and "confidence" (0-1) properties.',
+            content: `You are a note tagging assistant. Your job is to suggest descriptive tags for organizing notes in a personal knowledge base.
+
+Rules:
+- Tags should describe the SUBJECT MATTER of the note (e.g., "anime", "cooking", "python", "meeting-notes")
+- Do NOT suggest meta-tags about the task (like "suggestion", "recommendation", "ideas")
+- Tags should be lowercase with hyphens for spaces
+- Return ONLY a valid JSON array, no other text
+
+Example output: [{"tag": "anime", "confidence": 0.95}, {"tag": "comedy", "confidence": 0.8}]`,
           },
           {
             role: 'user',
@@ -214,27 +271,22 @@ export class AutoTagger {
    * Build the tagging prompt
    */
   private buildTagPrompt(content: string, existingTags: string[]): string {
-    let prompt = `Analyze this note and suggest relevant tags.
+    let prompt = `Suggest tags for this note based on its content.
 
-Note Content:
+Note Title & Content:
 ${content.slice(0, 2000)}${content.length > 2000 ? '...' : ''}
 `;
 
     if (existingTags.length > 0) {
       prompt += `
-Existing vault tags (prefer these when applicable):
+Existing tags in this vault (prefer these when they fit):
 ${existingTags.slice(0, 50).join(', ')}
 `;
     }
 
     prompt += `
-Suggest ${this.settings.maxTagSuggestions} tags with confidence scores (0-1).
-Format: [{"tag": "tag-name", "confidence": 0.9}, ...]
-
-Important:
-- Tags should be lowercase with hyphens
-- Focus on topics, categories, and concepts
-- Confidence should reflect how well the tag fits`;
+Suggest ${this.settings.maxTagSuggestions} tags that describe WHAT this note is about.
+Format: [{"tag": "topic-name", "confidence": 0.9}, ...]`;
 
     return prompt;
   }
@@ -255,6 +307,13 @@ Important:
       const paths = Array.from(this.tagQueue);
       this.tagQueue.clear();
       
+      // In 'suggest' mode, background processing is disabled
+      // User must manually invoke the command to see the modal
+      if (this.settings.autoTagMode === 'suggest') {
+        // Skip background processing in suggest mode
+        return;
+      }
+      
       for (const path of paths) {
         if (this.circuitBroken) break;
         
@@ -270,20 +329,14 @@ Important:
           
           if (suggestions.length === 0) continue;
           
-          if (this.settings.autoTagMode === 'auto') {
-            // Auto-apply high-confidence tags
-            const highConfidence = suggestions
-              .filter(s => s.confidence >= this.settings.autoTagConfidence)
-              .map(s => s.tag);
-            
-            if (highConfidence.length > 0) {
-              await this.applyTags(file, highConfidence);
-              new Notice(`Calcifer: Added tags to ${file.basename}: ${highConfidence.join(', ')}`);
-            }
-          } else {
-            // Just notify about suggestions
-            const tagList = suggestions.map(s => s.tag).join(', ');
-            new Notice(`Calcifer suggests tags for ${file.basename}: ${tagList}`);
+          // Auto-apply high-confidence tags (only mode that reaches here)
+          const highConfidence = suggestions
+            .filter(s => s.confidence >= this.settings.autoTagConfidence)
+            .map(s => s.tag);
+          
+          if (highConfidence.length > 0) {
+            await this.applyTags(file, highConfidence);
+            new Notice(`Calcifer: Added tags to ${file.basename}: ${highConfidence.join(', ')}`);
           }
         } catch (error) {
           console.error(`Failed to tag ${path}:`, error);
@@ -317,5 +370,96 @@ Important:
         setTimeout(resolve, 10);
       }
     });
+  }
+}
+
+/**
+ * Modal for tag suggestions
+ */
+class TagSuggestionModal extends Modal {
+  private file: TFile;
+  private suggestions: TagSuggestion[];
+  private tagger: AutoTagger;
+  private selectedTags: Set<string> = new Set();
+
+  constructor(
+    app: App,
+    file: TFile,
+    suggestions: TagSuggestion[],
+    tagger: AutoTagger
+  ) {
+    super(app);
+    this.file = file;
+    this.suggestions = suggestions;
+    this.tagger = tagger;
+    // Pre-select high confidence tags
+    for (const s of suggestions) {
+      if (s.confidence >= 0.7) {
+        this.selectedTags.add(s.tag);
+      }
+    }
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('calcifer-tag-modal');
+
+    contentEl.createEl('h2', { text: `Tag "${this.file.basename}"` });
+    contentEl.createEl('p', { 
+      text: 'Select tags to apply to this note:',
+      cls: 'calcifer-tag-modal-desc'
+    });
+
+    const suggestionsEl = contentEl.createDiv({ cls: 'calcifer-tag-suggestions' });
+
+    for (const suggestion of this.suggestions) {
+      const item = suggestionsEl.createDiv({ cls: 'calcifer-tag-suggestion' });
+      
+      const checkbox = item.createEl('input', { type: 'checkbox' });
+      checkbox.checked = this.selectedTags.has(suggestion.tag);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          this.selectedTags.add(suggestion.tag);
+        } else {
+          this.selectedTags.delete(suggestion.tag);
+        }
+      });
+      
+      const labelEl = item.createDiv({ cls: 'calcifer-tag-label' });
+      labelEl.createSpan({ text: `#${suggestion.tag}`, cls: 'calcifer-tag-name' });
+      labelEl.createSpan({ 
+        cls: 'calcifer-tag-confidence',
+        text: `${Math.round(suggestion.confidence * 100)}%`
+      });
+      
+      // Click label to toggle checkbox
+      labelEl.addEventListener('click', () => {
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event('change'));
+      });
+    }
+
+    // Action buttons
+    new Setting(contentEl)
+      .addButton(button => button
+        .setButtonText('Apply Selected')
+        .setCta()
+        .onClick(async () => {
+          if (this.selectedTags.size > 0) {
+            await this.tagger.applyTags(this.file, Array.from(this.selectedTags));
+            new Notice(`Added tags to ${this.file.basename}: ${Array.from(this.selectedTags).join(', ')}`);
+          }
+          this.close();
+        })
+      )
+      .addButton(button => button
+        .setButtonText('Skip')
+        .onClick(() => this.close())
+      );
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }

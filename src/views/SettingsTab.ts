@@ -754,7 +754,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Enable Auto-Tagging')
-      .setDesc('Automatically suggest or apply tags to notes')
+      .setDesc('Automatically apply tags to notes based on content')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableAutoTag)
         .onChange(async (value) => {
@@ -764,11 +764,11 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Auto-Tag Mode')
-      .setDesc('How to apply suggested tags')
+      .setName('Tag Mode')
+      .setDesc('Auto-apply tags automatically, or show a selection modal')
       .addDropdown(dropdown => dropdown
-        .addOption('auto', 'Auto-apply')
-        .addOption('suggest', 'Suggest only')
+        .addOption('suggest', 'Show selection modal')
+        .addOption('auto', 'Auto-apply high confidence')
         .setValue(this.plugin.settings.autoTagMode)
         .onChange(async (value: 'auto' | 'suggest') => {
           this.plugin.settings.autoTagMode = value;
@@ -777,7 +777,7 @@ export class CalciferSettingsTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Max Suggestions')
+      .setName('Max Tags')
       .setDesc('Maximum tags to suggest per note')
       .addSlider(slider => slider
         .setLimits(1, 10, 1)

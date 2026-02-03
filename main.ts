@@ -265,7 +265,7 @@ export default class CalciferPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (file && file.extension === 'md') {
           if (!checking) {
-            this.autoTagger.suggestTags(file);
+            this.autoTagger.showTagSuggestions(file);
           }
           return true;
         }
@@ -310,17 +310,15 @@ export default class CalciferPlugin extends Plugin {
       })
     );
 
-    // Handle file modifications - queue for re-indexing and auto-tagging
+    // Handle file modifications - queue for re-indexing only
+    // NOTE: Auto-tagging is only triggered on NEW files (create event), not modifications
+    // This prevents flooding the tagger when Obsidian syncs or starts up
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
         if (file.path.endsWith('.md')) {
           // Queue for re-indexing (debounced internally)
           if (this.embeddingManager) {
             this.embeddingManager.queueFile(file.path);
-          }
-          // Queue for auto-tagging (debounced internally)
-          if (this.settings.enableAutoTag && this.autoTagger) {
-            this.autoTagger.queueFile(file.path);
           }
         }
       })
