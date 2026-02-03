@@ -3,9 +3,9 @@
   "name": "Calcifer",
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
-  "description": "AI-powered assistant with RAG, chat, auto-tagging, note organization, and memory for your vault.",
-  "author": "Calcifer Team",
+  "description": "AI assistant with RAG, chat, auto-tagging, note organization, and memory for your vault.",
+  "author": "Anish S.",
   "authorUrl": "https://github.com/calcifer-plugin",
   "isDesktopOnly": false,
-  "fundingUrl": ""
+  "fundingUrl": "https://buymeacoffee.com/anyesh"
 }

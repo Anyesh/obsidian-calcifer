@@ -162,6 +162,21 @@ Calcifer is fully functional on mobile devices:
 - **API Choice**: Use local Ollama for complete privacy
 - **Memory Control**: View and delete any stored memories
 
+## Network Usage Disclosure
+
+This plugin makes network requests to AI API endpoints that you configure:
+
+| Service | Purpose | Data Sent |
+|---------|---------|-----------|
+| **Ollama** (local/remote) | Chat completions, embeddings | Note content for context, user messages |
+| **OpenAI** (or compatible) | Chat completions, embeddings | Note content for context, user messages |
+
+**Important:**
+- No data is sent to any server until you configure an API endpoint
+- You control which provider to use (local Ollama = no external network)
+- Note content is sent as context for AI responses (chunks of ~1000 chars)
+- No telemetry or analytics are collected by this plugin
+
 ## Development
 
 ```bash
@@ -247,9 +262,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Obsidian](https://obsidian.md) for the amazing note-taking platform
 - [Ollama](https://ollama.ai) for local LLM hosting
 - The Obsidian plugin community for inspiration
-
----
-
-<p align="center">
-  Made with 🔥 by Calcifer
-</p>
