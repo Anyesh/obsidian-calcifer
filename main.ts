@@ -104,8 +104,8 @@ export default class CalciferPlugin extends Plugin {
         this
       );
       
-      // Memory manager for persistent context
-      this.memoryManager = new MemoryManager(this);
+      // Memory manager for persistent context (with provider for embedding-based retrieval)
+      this.memoryManager = new MemoryManager(this, this.providerManager);
       await this.memoryManager.load();
       
       // RAG pipeline for chat with context

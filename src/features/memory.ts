@@ -1,11 +1,14 @@
 /**
  * Memory Manager
- * 
+ *
  * Manages persistent memories for the AI assistant.
  * Stores facts and preferences about the user.
+ * Supports embedding-based semantic retrieval with keyword fallback.
  */
 
 import type CalciferPlugin from '@/../main';
+import type { ProviderManager } from '@/providers/ProviderManager';
+import { cosineSimilarity } from '@/vectorstore/VectorStore';
 
 /**
  * Memory entry
@@ -17,6 +20,8 @@ export interface Memory {
   lastAccessedAt: number;
   accessCount: number;
   source?: string;
+  /** Embedding vector for semantic search (computed on add, optional for backward compat) */
+  embedding?: number[];
 }
 
 /**
@@ -42,11 +47,13 @@ const CURRENT_VERSION = 1;
  */
 export class MemoryManager {
   private plugin: CalciferPlugin;
+  private providerManager: ProviderManager | null;
   private memories: Memory[] = [];
   private isLoaded = false;
 
-  constructor(plugin: CalciferPlugin) {
+  constructor(plugin: CalciferPlugin, providerManager?: ProviderManager) {
     this.plugin = plugin;
+    this.providerManager = providerManager ?? null;
   }
 
   /**
@@ -114,6 +121,19 @@ export class MemoryManager {
       this.memories.shift();
     }
     
+    // Compute embedding for semantic retrieval
+    let embedding: number[] | undefined;
+    if (this.providerManager) {
+      try {
+        const response = await this.providerManager.embed({ input: content, model: '' });
+        if (response.embeddings.length > 0) {
+          embedding = response.embeddings[0];
+        }
+      } catch {
+        // Embedding optional -- continue without it
+      }
+    }
+
     const memory: Memory = {
       id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
       content,
@@ -121,11 +141,12 @@ export class MemoryManager {
       lastAccessedAt: Date.now(),
       accessCount: 1,
       source,
+      embedding,
     };
-    
+
     this.memories.push(memory);
     await this.save();
-    
+
     return memory;
   }
 
@@ -171,43 +192,91 @@ export class MemoryManager {
   }
 
   /**
-   * Get relevant memories for a query
+   * Get relevant memories for a query.
+   * Uses embedding-based semantic search when available, falls back to keyword overlap.
    */
-  getRelevantMemories(query: string, limit: number = 5): string[] {
+  async getRelevantMemories(query: string, limit: number = 5): Promise<string[]> {
     if (this.memories.length === 0) return [];
-    
-    // Score memories based on keyword overlap
+
+    // Try embedding-based search first
+    const embeddingResults = await this.getMemoriesByEmbedding(query, limit);
+    if (embeddingResults.length > 0) {
+      return embeddingResults;
+    }
+
+    // Fallback: keyword-based scoring
+    return this.getMemoriesByKeyword(query, limit);
+  }
+
+  /**
+   * Embedding-based memory retrieval using cosine similarity
+   */
+  private async getMemoriesByEmbedding(query: string, limit: number): Promise<string[]> {
+    if (!this.providerManager) return [];
+
+    // Check if any memories have embeddings
+    const memoriesWithEmbeddings = this.memories.filter(m => m.embedding);
+    if (memoriesWithEmbeddings.length === 0) return [];
+
+    try {
+      const response = await this.providerManager.embed({ input: query, model: '' });
+      if (response.embeddings.length === 0) return [];
+
+      const queryVec = response.embeddings[0];
+      const scored = memoriesWithEmbeddings.map(memory => ({
+        memory,
+        score: cosineSimilarity(queryVec, memory.embedding!),
+      }));
+
+      scored.sort((a, b) => b.score - a.score);
+      const relevant = scored.filter(s => s.score > 0.3).slice(0, limit);
+
+      for (const { memory } of relevant) {
+        memory.lastAccessedAt = Date.now();
+        memory.accessCount++;
+      }
+
+      if (relevant.length > 0) {
+        void this.save();
+      }
+
+      return relevant.map(s => s.memory.content);
+    } catch {
+      return []; // Fall through to keyword-based
+    }
+  }
+
+  /**
+   * Keyword-based memory retrieval using word overlap scoring
+   */
+  private getMemoriesByKeyword(query: string, limit: number): string[] {
     const queryWords = this.tokenize(query.toLowerCase());
-    
+
     const scored = this.memories.map(memory => {
       const memoryWords = this.tokenize(memory.content.toLowerCase());
       const overlap = queryWords.filter(w => memoryWords.includes(w)).length;
       const score = overlap / Math.max(queryWords.length, 1);
-      
       return { memory, score };
     });
-    
-    // Sort by score and access frequency
+
     scored.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return b.memory.accessCount - a.memory.accessCount;
     });
-    
-    // Update access times for returned memories
+
     const relevant = scored
       .filter(s => s.score > 0)
       .slice(0, limit);
-    
+
     for (const { memory } of relevant) {
       memory.lastAccessedAt = Date.now();
       memory.accessCount++;
     }
-    
-    // Save if we updated any
+
     if (relevant.length > 0) {
-      void this.save(); // Don't await, fire and forget
+      void this.save();
     }
-    
+
     return relevant.map(s => s.memory.content);
   }
 
