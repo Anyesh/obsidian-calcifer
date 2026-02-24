@@ -226,7 +226,7 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Send the current message
+   * Send the current message using streaming
    */
   private async sendMessage(): Promise<void> {
     const content = this.inputArea.value.trim();
@@ -240,7 +240,7 @@ export class ChatView extends ItemView {
 
     // Add user message to chat
     this.addMessage('user', content);
-    
+
     // Clear input
     this.inputArea.value = '';
     this.inputArea.setCssProps({ '--input-height': 'auto' });
@@ -254,24 +254,98 @@ export class ChatView extends ItemView {
     // Show typing indicator
     const typingId = this.showTypingIndicator();
 
+    // Prepare an empty assistant message element for streaming into
+    const messageId = `msg-${Date.now()}`;
+    const message: ChatMessage = {
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    };
+
     try {
-      // Get response from RAG pipeline
-      const response = await this.plugin.ragPipeline.chat(
+      let streamingText = '';
+      let messageEl: HTMLElement | null = null;
+      let contentEl: HTMLElement | null = null;
+      let typingRemoved = false;
+
+      const response = await this.plugin.ragPipeline.chatStream(
         content,
-        this.getConversationHistory()
+        this.getConversationHistory(),
+        // onChunk: append text as it arrives
+        (chunk) => {
+          // Remove typing indicator on first chunk
+          if (!typingRemoved) {
+            this.removeTypingIndicator(typingId);
+            typingRemoved = true;
+
+            // Create the message element now
+            messageEl = this.messagesContainer.createDiv({
+              cls: 'calcifer-message calcifer-message--assistant',
+            });
+            const header = messageEl.createDiv({ cls: 'calcifer-message-header' });
+            header.createSpan({ cls: 'calcifer-message-role', text: 'Calcifer' });
+            header.createSpan({
+              cls: 'calcifer-message-time',
+              text: this.formatTime(message.timestamp),
+            });
+            contentEl = messageEl.createDiv({ cls: 'calcifer-message-content' });
+          }
+
+          streamingText += chunk.content;
+          if (contentEl) {
+            contentEl.setText(streamingText);
+          }
+          this.scrollToBottom();
+        },
+        // onSources: store for later rendering
+        (sources) => {
+          message.contextSources = sources;
+        }
       );
 
-      // Remove typing indicator
-      this.removeTypingIndicator(typingId);
+      // If no chunks arrived (empty response), still clean up typing indicator
+      if (!typingRemoved) {
+        this.removeTypingIndicator(typingId);
+      }
 
-      // Add assistant message
-      this.addMessage('assistant', response.content, response.contextSources);
+      // Final content from response (may differ if tool blocks were stripped)
+      message.content = response.content;
+
+      // If tool summary exists, append it
+      if (response.toolSummary) {
+        const finalContent = response.content.trim()
+          ? response.content + '\n\n**Actions performed:**\n' + response.toolSummary
+          : '**Actions performed:**\n' + response.toolSummary;
+        message.content = finalContent;
+      }
+
+      // Final markdown render on the content element
+      if (contentEl) {
+        (contentEl as HTMLElement).empty();
+        void MarkdownRenderer.render(
+          this.app,
+          message.content,
+          contentEl as HTMLElement,
+          '',
+          this
+        );
+      }
+
+      // Render source pills
+      if (messageEl && message.contextSources && message.contextSources.length > 0 && this.plugin.settings.showContextSources) {
+        this.renderSourcePills(messageEl, message.contextSources);
+      }
+
+      // Store message in history
+      this.messages.push(message);
+      void this.saveMessages();
+      this.scrollToBottom();
 
     } catch (error) {
-      // Remove typing indicator
+      // Remove typing indicator if still showing
       this.removeTypingIndicator(typingId);
 
-      // Show error
       console.error('Chat error:', error);
       this.addErrorMessage(
         `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -282,6 +356,27 @@ export class ChatView extends ItemView {
       this.sendButton.disabled = false;
       this.sendButton.setText('Send');
       this.plugin.setStatusChatting(false);
+    }
+  }
+
+  /**
+   * Render context source pills on a message element
+   */
+  private renderSourcePills(messageEl: HTMLElement, sources: string[]): void {
+    const sourcesEl = messageEl.createDiv({ cls: 'calcifer-context-pills' });
+    sourcesEl.createSpan({ cls: 'calcifer-context-label', text: 'Sources: ' });
+
+    for (const source of sources) {
+      const pill = sourcesEl.createSpan({ cls: 'calcifer-context-pill' });
+      setIcon(pill.createSpan({ cls: 'calcifer-context-pill-icon' }), 'file-text');
+      pill.createSpan({ text: this.getFileName(source) });
+
+      pill.addEventListener('click', () => {
+        const file = this.app.vault.getFileByPath(source);
+        if (file) {
+          void this.app.workspace.openLinkText(source, '', false);
+        }
+      });
     }
   }
 
