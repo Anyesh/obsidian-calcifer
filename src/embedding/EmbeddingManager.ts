@@ -9,7 +9,7 @@ import { App, TFile, Notice, Platform } from 'obsidian';
 import type CalciferPlugin from '@/../main';
 import { ProviderManager } from '@/providers/ProviderManager';
 import { VectorStore, VectorDocument } from '@/vectorstore/VectorStore';
-import { chunkText, extractFrontmatter } from '@/vectorstore/Chunker';
+import { chunkText } from '@/vectorstore/Chunker';
 import type { CalciferSettings } from '@/settings';
 import { debounce } from '@/utils/debounce';
 import { RateLimiter } from '@/utils/rateLimiter';
@@ -456,8 +456,9 @@ export class EmbeddingManager {
     // Read file content
     const content = await this.app.vault.cachedRead(file);
     
-    // Extract frontmatter
-    const metadata = extractFrontmatter(content);
+    // Extract frontmatter via Obsidian's metadata cache (handles all YAML correctly)
+    const fileCache = this.app.metadataCache.getFileCache(file);
+    const metadata = fileCache?.frontmatter ?? null;
     
     // Chunk the content (synchronous but fast for normal files)
     const chunks = chunkText(content, {
