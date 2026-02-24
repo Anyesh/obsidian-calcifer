@@ -6,5 +6,5 @@
 
 export { VectorStore, cosineSimilarity, euclideanDistance } from './VectorStore';
 export type { VectorDocument, SearchResult, VectorStoreStats } from './VectorStore';
-export { chunkText, cleanText, extractFrontmatter } from './Chunker';
+export { chunkText, cleanText } from './Chunker';
 export type { Chunk, ChunkerOptions } from './Chunker';

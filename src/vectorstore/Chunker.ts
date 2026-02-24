@@ -284,8 +284,8 @@ export function cleanText(text: string): string {
   return text
     // Remove YAML frontmatter
     .replace(/^---[\s\S]*?---\n?/, '')
-    // Remove code blocks (keep description)
-    .replace(/```[\s\S]*?```/g, '[code block]')
+    // Strip code fence markers but preserve code content
+    .replace(/```\w*\n?([\s\S]*?)```/g, '$1')
     // Remove inline code
     .replace(/`[^`]+`/g, (match) => match.slice(1, -1))
     // Remove image syntax but keep alt text
@@ -302,7 +302,9 @@ export function cleanText(text: string): string {
 }
 
 /**
- * Extract frontmatter from markdown
+ * Extract frontmatter from markdown.
+ * @deprecated Use `app.metadataCache.getFileCache(file)?.frontmatter` instead.
+ * This hand-rolled parser cannot handle multi-line values, nested objects, or YAML lists.
  */
 export function extractFrontmatter(text: string): Record<string, unknown> | null {
   const match = text.match(/^---\n([\s\S]*?)\n---/);
