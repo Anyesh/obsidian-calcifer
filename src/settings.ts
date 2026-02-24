@@ -59,6 +59,10 @@ export interface CalciferSettings {
   ragIncludeFrontmatter: boolean;
   /** Maximum total context length (characters) */
   ragMaxContextLength: number;
+  /** Enable confidence gating to skip RAG for conversational messages */
+  enableConfidenceGating: boolean;
+  /** Minimum top-result score to include any context (hard floor) */
+  ragConfidenceFloor: number;
   
   // === Chat Settings ===
   /** System prompt for the assistant */
@@ -145,6 +149,8 @@ export const DEFAULT_SETTINGS: CalciferSettings = {
   ragMinScore: 0.5,
   ragIncludeFrontmatter: true,
   ragMaxContextLength: 8000,
+  enableConfidenceGating: true,
+  ragConfidenceFloor: 0.25,
   
   // Chat
   systemPrompt: `You are Calcifer, a helpful AI assistant integrated into Obsidian.
@@ -251,6 +257,9 @@ export function validateSettings(settings: CalciferSettings): string[] {
   }
   if (!Number.isFinite(settings.ragMinScore) || settings.ragMinScore < 0 || settings.ragMinScore > 1) {
     errors.push('RAG min score must be between 0 and 1');
+  }
+  if (!Number.isFinite(settings.ragConfidenceFloor) || settings.ragConfidenceFloor < 0 || settings.ragConfidenceFloor > 1) {
+    errors.push('RAG confidence floor must be between 0 and 1');
   }
   if (!Number.isFinite(settings.chatTemperature) || settings.chatTemperature < 0 || settings.chatTemperature > 2) {
     errors.push('Chat temperature must be between 0 and 2');

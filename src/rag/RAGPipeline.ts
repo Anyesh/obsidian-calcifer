@@ -9,7 +9,7 @@ import { ProviderManager } from '@/providers/ProviderManager';
 import { VectorStore, SearchResult } from '@/vectorstore/VectorStore';
 import { MemoryManager } from '@/features/memory';
 import { ToolManager, ToolResult } from '@/tools';
-import type { ChatMessage } from '@/providers/types';
+import type { ChatMessage, ChatStreamChunk } from '@/providers/types';
 import type { CalciferSettings } from '@/settings';
 
 /**
@@ -36,6 +36,27 @@ interface ContextChunk {
   source: string;
   score: number;
 }
+
+/** Common stop words to ignore when evaluating query substance */
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+  'can', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
+  'it', 'its', 'this', 'that', 'these', 'those', 'and', 'or', 'but',
+  'not', 'so', 'if', 'as', 'has', 'have', 'had', 'my', 'me', 'i',
+  'you', 'your', 'we', 'our', 'he', 'she', 'they', 'them',
+]);
+
+/** Patterns that indicate a conversational message not requiring vault context */
+const CONVERSATIONAL_PATTERNS = [
+  /^(hi|hey|hello|howdy|sup|yo|hiya|greetings)[\s!.,?]*$/i,
+  /^(thanks|thank you|thx|ty|cheers|much appreciated)[\s!.,?]*$/i,
+  /^(ok|okay|sure|got it|alright|cool|nice|great|awesome|perfect|sounds good|understood)[\s!.,?]*$/i,
+  /^(yes|no|yep|nope|yeah|nah|yea|nay)[\s!.,?]*$/i,
+  /^(bye|goodbye|see you|later|good night|good morning|gm|gn)[\s!.,?]*$/i,
+  /^(what can you do|who are you|help me|how are you)[\s!.,?]*$/i,
+  /^(lol|haha|hehe|lmao|rofl|xd)[\s!.,?]*$/i,
+];
 
 /**
  * RAG Pipeline
@@ -80,11 +101,12 @@ export class RAGPipeline {
     query: string,
     conversationHistory: ChatMessage[] = []
   ): Promise<RAGResponse> {
-    // 1. Retrieve relevant context from vector store
-    const context = await this.retrieveContext(query);
+    // 1. Retrieve relevant context (skip for conversational messages)
+    const shouldSearch = this.shouldRetrieveContext(query);
+    const context = shouldSearch ? await this.retrieveContext(query) : [];
     
     // 2. Get relevant memories
-    const memories = this.getRelevantMemories(query);
+    const memories = await this.getRelevantMemories(query);
     
     // 3. Build the prompt with context (now includes tool descriptions)
     const messages = this.buildPrompt(query, context, memories, conversationHistory);
@@ -140,6 +162,91 @@ export class RAGPipeline {
   }
 
   /**
+   * Generate a streaming response with RAG context.
+   * Tokens are emitted via onChunk; sources via onSources.
+   * Tool processing happens after stream completes.
+   */
+  async chatStream(
+    query: string,
+    conversationHistory: ChatMessage[],
+    onChunk: (chunk: ChatStreamChunk) => void,
+    onSources: (sources: string[]) => void
+  ): Promise<RAGResponse> {
+    // 1. Retrieve context (with confidence gating)
+    const shouldSearch = this.shouldRetrieveContext(query);
+    const context = shouldSearch ? await this.retrieveContext(query) : [];
+
+    // 2. Emit sources early so UI can render them before LLM responds
+    const contextSources = [...new Set(context.map(c => c.source))];
+    onSources(contextSources);
+
+    // 3. Build prompt
+    const memories = await this.getRelevantMemories(query);
+    const messages = this.buildPrompt(query, context, memories, conversationHistory);
+
+    // 4. Stream from provider
+    const response = await this.providerManager.chatStream(
+      {
+        messages,
+        temperature: this.settings.chatTemperature,
+        maxTokens: this.settings.chatMaxTokens,
+      },
+      onChunk
+    );
+
+    // 5. Post-stream: tool processing on full text
+    let content = response.content;
+    let toolResults: ToolResult[] | undefined;
+    let toolSummary: string | undefined;
+
+    if (this.toolManager && this.settings.enableToolCalling) {
+      const processed = await this.toolManager.processResponse(response.content);
+      content = processed.content;
+
+      if (processed.hasToolCalls) {
+        toolResults = processed.toolResults;
+        toolSummary = processed.toolSummary;
+      }
+    }
+
+    // 6. Memory extraction (fire and forget)
+    void this.extractMemories(query, content);
+
+    return {
+      content,
+      contextSources,
+      usage: response.usage ? {
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+      } : undefined,
+      toolResults,
+      toolSummary,
+    };
+  }
+
+  /**
+   * Determine if a query warrants vault context retrieval.
+   * Skips embedding + search for conversational messages like "hi", "thanks", etc.
+   */
+  private shouldRetrieveContext(query: string): boolean {
+    if (!this.settings.enableConfidenceGating) return true;
+
+    const trimmed = query.trim();
+
+    // Match conversational patterns that never need vault context
+    if (CONVERSATIONAL_PATTERNS.some(p => p.test(trimmed))) return false;
+
+    // Check if query has enough substance (at least 2 non-stop-words)
+    const words = trimmed.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !STOP_WORDS.has(w));
+    if (words.length < 2) return false;
+
+    return true;
+  }
+
+  /**
    * Retrieve relevant context from the vector store
    */
   private async retrieveContext(query: string): Promise<ContextChunk[]> {
@@ -149,24 +256,38 @@ export class RAGPipeline {
         input: query,
         model: '',
       });
-      
+
       if (embeddingResponse.embeddings.length === 0) {
         return [];
       }
-      
+
       const queryEmbedding = embeddingResponse.embeddings[0];
-      
+
       // Search for similar chunks
       const results = await this.vectorStore.search(
         queryEmbedding,
         this.settings.ragTopK,
         this.settings.ragMinScore
       );
-      
+
+      if (results.length === 0) return [];
+
+      // Post-search confidence filtering
+      const topScore = results[0].score;
+
+      // Hard floor: if even the best result is below the confidence floor, discard all
+      if (topScore < this.settings.ragConfidenceFloor) {
+        return [];
+      }
+
+      // Dynamic floor: results must be at least 60% of the best match
+      const dynamicFloor = topScore * 0.6;
+      const filtered = results.filter(r => r.score >= dynamicFloor);
+
       // Convert to context chunks with optional frontmatter
-      return results.map(r => {
+      const chunks = filtered.map(r => {
         let content = r.document.content;
-        
+
         // Include frontmatter metadata if enabled
         if (this.settings.ragIncludeFrontmatter && r.document.metadata) {
           const metaStr = Object.entries(r.document.metadata)
@@ -183,14 +304,16 @@ export class RAGPipeline {
             content = `---\n${metaStr}\n---\n\n${content}`;
           }
         }
-        
+
         return {
           content,
           source: r.document.path,
           score: r.score,
         };
       });
-      
+
+      return this.deduplicateContext(chunks);
+
     } catch (error) {
       console.error('Failed to retrieve context:', error);
       return [];
@@ -198,13 +321,48 @@ export class RAGPipeline {
   }
 
   /**
+   * Remove overlapping chunks from the same source file.
+   * When chunks overlap (due to chunker overlap setting), the higher-scored one wins.
+   */
+  private deduplicateContext(chunks: ContextChunk[]): ContextChunk[] {
+    if (chunks.length <= 1) return chunks;
+
+    const result: ContextChunk[] = [];
+
+    for (const chunk of chunks) {
+      const isDuplicate = result.some(existing => {
+        // Only check chunks from the same source file
+        if (existing.source !== chunk.source) return false;
+
+        // Check if the middle portion of the shorter text appears in the longer
+        const shorter = chunk.content.length < existing.content.length ? chunk.content : existing.content;
+        const longer = chunk.content.length >= existing.content.length ? chunk.content : existing.content;
+
+        // Use a core sample from the middle (skip boundaries which are most likely to differ)
+        const sampleStart = Math.min(50, Math.floor(shorter.length * 0.2));
+        const sampleEnd = Math.max(shorter.length - 50, Math.ceil(shorter.length * 0.8));
+        if (sampleEnd <= sampleStart) return false;
+
+        const sample = shorter.slice(sampleStart, sampleEnd);
+        return sample.length > 0 && longer.includes(sample);
+      });
+
+      if (!isDuplicate) {
+        result.push(chunk);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Get relevant memories for the query
    */
-  private getRelevantMemories(query: string): string[] {
+  private async getRelevantMemories(query: string): Promise<string[]> {
     if (!this.settings.enableMemory || !this.settings.includeMemoriesInContext) {
       return [];
     }
-    
+
     return this.memoryManager.getRelevantMemories(query);
   }
 
