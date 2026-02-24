@@ -6,7 +6,7 @@
  * Works on both desktop and mobile.
  */
 
-import { App, TFile } from 'obsidian';
+import { App, TFile, Platform } from 'obsidian';
 
 /**
  * Stored vector document
@@ -60,9 +60,16 @@ export class VectorStore {
   private app: App;
   private db: IDBDatabase | null = null;
   private isInitialized = false;
+  /** In-memory cache of all documents for fast repeat searches (desktop only) */
+  private docCache: VectorDocument[] | null = null;
 
   constructor(app: App) {
     this.app = app;
+  }
+
+  /** Invalidate the in-memory cache (call after any mutation) */
+  private invalidateCache(): void {
+    this.docCache = null;
   }
 
   /**
@@ -106,6 +113,7 @@ export class VectorStore {
       this.db.close();
       this.db = null;
       this.isInitialized = false;
+      this.docCache = null;
     }
   }
 
@@ -123,6 +131,7 @@ export class VectorStore {
    */
   async upsert(doc: VectorDocument): Promise<void> {
     this.ensureInitialized();
+    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -146,6 +155,7 @@ export class VectorStore {
    */
   async upsertBatch(docs: VectorDocument[]): Promise<void> {
     this.ensureInitialized();
+    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -233,6 +243,7 @@ export class VectorStore {
    */
   async delete(id: string): Promise<void> {
     this.ensureInitialized();
+    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -249,6 +260,7 @@ export class VectorStore {
    */
   async deleteByPath(path: string): Promise<void> {
     this.ensureInitialized();
+    this.invalidateCache();
 
     const docs = await this.getByPath(path);
     
@@ -289,7 +301,8 @@ export class VectorStore {
    */
   async updatePath(oldPath: string, newPath: string): Promise<void> {
     this.ensureInitialized();
-    
+    this.invalidateCache();
+
     const docs = await this.getByPath(oldPath);
     if (docs.length === 0) return;
     
@@ -334,6 +347,7 @@ export class VectorStore {
    */
   async clear(): Promise<void> {
     this.ensureInitialized();
+    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
@@ -371,19 +385,19 @@ export class VectorStore {
     minScore: number = 0
   ): Promise<SearchResult[]> {
     this.ensureInitialized();
-    
-    // Get all documents in batches to prevent memory issues with large vaults
-    const allDocs = await this.getAllInBatches(500);
-    
+
+    // Use in-memory cache on desktop for fast repeat searches
+    const allDocs = await this.getCachedDocs();
+
     const results: SearchResult[] = [];
     const BATCH_SIZE = 100;
-    
+
     for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
       const batch = allDocs.slice(i, i + BATCH_SIZE);
-      
+
       for (const doc of batch) {
         const score = cosineSimilarity(queryEmbedding, doc.embedding);
-        
+
         if (score >= minScore) {
           // Keep only top K results using min-heap logic
           if (results.length < topK) {
@@ -395,31 +409,63 @@ export class VectorStore {
           }
         }
       }
-      
+
       // Yield to UI between batches
       if (i + BATCH_SIZE < allDocs.length) {
         await this.yieldToUI();
       }
     }
-    
+
     // Return results sorted descending
     results.sort((a, b) => b.score - a.score);
     return results;
   }
 
   /**
-   * Get all documents in batches to allow UI updates
+   * Get documents, using in-memory cache on desktop to avoid re-reading IndexedDB.
+   * On mobile, always reads from IndexedDB to conserve memory.
    */
-  private async getAllInBatches(_batchSize: number): Promise<VectorDocument[]> {
+  private async getCachedDocs(): Promise<VectorDocument[]> {
+    // On desktop, use cache if available
+    if (Platform.isDesktop && this.docCache) {
+      return this.docCache;
+    }
+
+    const docs = await this.loadAllDocs();
+
+    // Only cache on desktop (can use ~30MB+ for large vaults)
+    if (Platform.isDesktop) {
+      this.docCache = docs;
+    }
+
+    return docs;
+  }
+
+  /**
+   * Load all documents from IndexedDB using cursor-based iteration
+   */
+  private async loadAllDocs(): Promise<VectorDocument[]> {
     this.ensureInitialized();
-    
+
     return new Promise((resolve, reject) => {
+      const results: VectorDocument[] = [];
       const transaction = this.db!.transaction(STORE_NAME, 'readonly');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.getAll();
-      
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(new Error(`Failed to getAll: ${request.error?.message}`));
+      const request = store.openCursor();
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          results.push(cursor.value as VectorDocument);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+
+      request.onerror = () => {
+        reject(new Error(`Failed to load documents: ${request.error?.message}`));
+      };
     });
   }
 
