@@ -168,6 +168,7 @@ export class OllamaProvider implements AIProvider {
   ): Promise<ChatResponse> {
     // Ollama is typically local, so we can use fetch
     // For mobile/restricted environments, fall back to non-streaming
+    // eslint-disable-next-line no-restricted-globals -- requestUrl doesn't support ReadableStream
     if (typeof fetch === 'undefined') {
       const response = await this.chat(request);
       onChunk({ content: response.content, done: true });
@@ -193,6 +194,7 @@ export class OllamaProvider implements AIProvider {
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
+      // eslint-disable-next-line no-restricted-globals -- requestUrl doesn't support ReadableStream
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -395,6 +397,7 @@ export class OllamaProvider implements AIProvider {
         options.body = JSON.stringify(body);
       }
 
+      // eslint-disable-next-line no-restricted-globals -- fallback for self-signed certs
       const response = await fetch(url, options);
       
       if (response.status >= 400) {
