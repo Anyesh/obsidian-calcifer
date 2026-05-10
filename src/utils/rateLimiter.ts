@@ -31,25 +31,15 @@ export class RateLimiter {
    */
   async acquire(): Promise<void> {
     this.refill();
-    
+
     if (this.tokens >= 1) {
       this.tokens--;
       return;
     }
-    
-    // Wait for a token with a maximum wait time
-    return new Promise((resolve) => {
-      // Calculate time until next token
-      const timeToNextToken = Math.ceil((1 - this.tokens) / this.refillRate);
-      const maxWait = Math.min(timeToNextToken, 2000); // Never wait more than 2 seconds
-      
-      setTimeout(() => {
-        this.refill();
-        if (this.tokens >= 1) {
-          this.tokens--;
-        }
-        resolve();
-      }, maxWait);
+
+    return new Promise<void>((resolve) => {
+      this.waitQueue.push(resolve);
+      this.scheduleRefill();
     });
   }
 
@@ -80,29 +70,35 @@ export class RateLimiter {
   /**
    * Refill tokens based on elapsed time
    */
+  private refillScheduled = false;
+
   private refill(): void {
     const now = Date.now();
     const elapsed = now - this.lastRefill;
     const newTokens = elapsed * this.refillRate;
-    
+
     this.tokens = Math.min(this.maxTokens, this.tokens + newTokens);
     this.lastRefill = now;
-    
-    // Process waiting requests
+
     while (this.tokens >= 1 && this.waitQueue.length > 0) {
       this.tokens--;
       const resolve = this.waitQueue.shift()!;
       resolve();
     }
+
+    if (this.waitQueue.length > 0) {
+      this.scheduleRefill();
+    }
   }
 
-  /**
-   * Schedule a refill check
-   */
   private scheduleRefill(): void {
-    const timeToNextToken = (1 - (this.tokens % 1)) / this.refillRate;
-    
+    if (this.refillScheduled) return;
+    this.refillScheduled = true;
+
+    const deficit = Math.max(0, 1 - this.tokens);
+    const timeToNextToken = Math.ceil(deficit / this.refillRate);
     setTimeout(() => {
+      this.refillScheduled = false;
       this.refill();
     }, Math.max(10, timeToNextToken));
   }

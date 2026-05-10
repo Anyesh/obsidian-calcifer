@@ -41,10 +41,28 @@ export class ProviderManager {
   private providers: Map<string, AIProvider> = new Map();
   private providerStatus: Map<string, ProviderStatus> = new Map();
   private settings: CalciferSettings;
-  
+
   constructor(settings: CalciferSettings) {
     this.settings = settings;
     this.initializeProviders();
+  }
+
+  private markHealthy(providerId: string): void {
+    const status = this.providerStatus.get(providerId);
+    if (status) {
+      status.healthy = true;
+      status.lastCheck = new Date();
+      status.error = undefined;
+    }
+  }
+
+  private markFailed(providerId: string, error: Error): void {
+    const status = this.providerStatus.get(providerId);
+    if (status) {
+      status.healthy = false;
+      status.lastCheck = new Date();
+      status.error = error.message;
+    }
   }
 
   /**
@@ -177,22 +195,15 @@ export class ProviderManager {
     for (const provider of providers) {
       try {
         const response = await provider.chat(request);
+        this.markHealthy(provider.id);
         return response;
       } catch (error) {
         console.warn(`Provider ${provider.name} failed:`, error);
         lastError = error instanceof Error ? error : new Error(String(error));
-        
-        // Update status
-        const status = this.providerStatus.get(provider.id);
-        if (status) {
-          status.healthy = false;
-          status.error = lastError.message;
-        }
-        
-        // Continue to next provider
+        this.markFailed(provider.id, lastError);
       }
     }
-    
+
     throw new ProviderError(
       `All providers failed. Last error: ${lastError?.message}`,
       'CONNECTION_FAILED',
@@ -223,17 +234,12 @@ export class ProviderManager {
     for (const provider of providers) {
       try {
         const response = await provider.chatStream(request, onChunk);
+        this.markHealthy(provider.id);
         return response;
       } catch (error) {
         console.warn(`Provider ${provider.name} streaming failed:`, error);
         lastError = error instanceof Error ? error : new Error(String(error));
-        
-        // Update status
-        const status = this.providerStatus.get(provider.id);
-        if (status) {
-          status.healthy = false;
-          status.error = lastError.message;
-        }
+        this.markFailed(provider.id, lastError);
       }
     }
     
@@ -264,17 +270,12 @@ export class ProviderManager {
     for (const provider of providers) {
       try {
         const response = await provider.embed(request);
+        this.markHealthy(provider.id);
         return response;
       } catch (error) {
         console.warn(`Provider ${provider.name} embed failed:`, error);
         lastError = error instanceof Error ? error : new Error(String(error));
-        
-        // Update status
-        const status = this.providerStatus.get(provider.id);
-        if (status) {
-          status.healthy = false;
-          status.error = lastError.message;
-        }
+        this.markFailed(provider.id, lastError);
       }
     }
     

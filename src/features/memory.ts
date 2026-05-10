@@ -45,11 +45,14 @@ const CURRENT_VERSION = 1;
 /**
  * Memory Manager
  */
+const QUERY_EMBED_CACHE_LIMIT = 32;
+
 export class MemoryManager {
   private plugin: CalciferPlugin;
   private providerManager: ProviderManager | null;
   private memories: Memory[] = [];
   private isLoaded = false;
+  private queryEmbedCache = new Map<string, number[]>();
 
   constructor(plugin: CalciferPlugin, providerManager?: ProviderManager) {
     this.plugin = plugin;
@@ -98,16 +101,11 @@ export class MemoryManager {
    * Add a new memory
    */
   async addMemory(content: string, source?: string): Promise<Memory> {
-    // Check for duplicates or very similar memories
-    const isDuplicate = this.memories.some(m => 
+    const existing = this.memories.find(m =>
       this.calculateSimilarity(m.content, content) > 0.9
     );
-    
-    if (isDuplicate) {
-      // Return existing similar memory
-      const existing = this.memories.find(m => 
-        this.calculateSimilarity(m.content, content) > 0.9
-      )!;
+
+    if (existing) {
       existing.lastAccessedAt = Date.now();
       existing.accessCount++;
       await this.save();
@@ -219,10 +217,8 @@ export class MemoryManager {
     if (memoriesWithEmbeddings.length === 0) return [];
 
     try {
-      const response = await this.providerManager.embed({ input: query, model: '' });
-      if (response.embeddings.length === 0) return [];
-
-      const queryVec = response.embeddings[0];
+      const queryVec = await this.getQueryEmbedding(query);
+      if (!queryVec) return [];
       const scored = memoriesWithEmbeddings.map(memory => ({
         memory,
         score: cosineSimilarity(queryVec, memory.embedding!),
@@ -237,7 +233,7 @@ export class MemoryManager {
       }
 
       if (relevant.length > 0) {
-        void this.save();
+        await this.save();
       }
 
       return relevant.map(s => s.memory.content);
@@ -249,7 +245,7 @@ export class MemoryManager {
   /**
    * Keyword-based memory retrieval using word overlap scoring
    */
-  private getMemoriesByKeyword(query: string, limit: number): string[] {
+  private async getMemoriesByKeyword(query: string, limit: number): Promise<string[]> {
     const queryWords = this.tokenize(query.toLowerCase());
 
     const scored = this.memories.map(memory => {
@@ -274,7 +270,7 @@ export class MemoryManager {
     }
 
     if (relevant.length > 0) {
-      void this.save();
+      await this.save();
     }
 
     return relevant.map(s => s.memory.content);
@@ -328,5 +324,27 @@ export class MemoryManager {
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
       .filter(w => w.length > 2);
+  }
+
+  private async getQueryEmbedding(query: string): Promise<number[] | null> {
+    const cached = this.queryEmbedCache.get(query);
+    if (cached) {
+      this.queryEmbedCache.delete(query);
+      this.queryEmbedCache.set(query, cached);
+      return cached;
+    }
+
+    if (!this.providerManager) return null;
+    const response = await this.providerManager.embed({ input: query, model: '' });
+    if (response.embeddings.length === 0) return null;
+
+    const vec = response.embeddings[0];
+    this.queryEmbedCache.set(query, vec);
+    while (this.queryEmbedCache.size > QUERY_EMBED_CACHE_LIMIT) {
+      const next = this.queryEmbedCache.keys().next();
+      if (next.done) break;
+      this.queryEmbedCache.delete(next.value);
+    }
+    return vec;
   }
 }

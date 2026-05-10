@@ -240,7 +240,7 @@ export function validateSettings(settings: CalciferSettings): string[] {
     if (!endpoint.embeddingModel || endpoint.embeddingModel.trim() === '') {
       errors.push(`Endpoint "${endpoint.name}": Embedding model is required`);
     }
-    if (endpoint.type === 'openai' && !endpoint.apiKey) {
+    if (endpoint.type === 'openai' && (!endpoint.apiKey || endpoint.apiKey.trim() === '')) {
       errors.push(`Endpoint "${endpoint.name}": API key is required for OpenAI`);
     }
   }

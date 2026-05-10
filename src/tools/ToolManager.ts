@@ -232,22 +232,26 @@ export class ToolManager {
         }
       }
       
-      // Execute the tool
       const result = await this.executor.execute(toolCall);
       toolResults.push(result);
 
-      // Build summary
-      const icon = result.success ? '✅' : '❌';
-      summaryParts.push(`${icon} ${result.message}`);
-      
-      // Show notification for the action
-      if (result.success) {
-        new Notice(`Calcifer: ${result.message}`, 3000);
-      } else {
-        new Notice(`Calcifer Error: ${result.message}`, 5000);
-      }
+      const marker = result.success ? '[ok]' : '[err]';
+      summaryParts.push(`${marker} ${result.message}`);
     }
-    
+
+    const successes = toolResults.filter(r => r.success).length;
+    const failures = toolResults.length - successes;
+    if (toolResults.length === 1) {
+      const only = toolResults[0];
+      const prefix = only.success ? 'Calcifer' : 'Calcifer Error';
+      new Notice(`${prefix}: ${only.message}`, only.success ? 3000 : 5000);
+    } else if (toolResults.length > 1) {
+      const parts: string[] = [];
+      if (successes > 0) parts.push(`${successes} succeeded`);
+      if (failures > 0) parts.push(`${failures} failed`);
+      new Notice(`Calcifer: ${parts.join(', ')}`, failures > 0 ? 5000 : 3000);
+    }
+
     return {
       content: cleanContent,
       toolCalls,

@@ -173,11 +173,23 @@ export class NoteOrganizer {
         return results.filter(r => r.document.path !== file.path);
       }
       
-      // Average the embeddings
-      const avgEmbedding = this.averageEmbeddings(docs.map(d => d.embedding));
-      
+      const validEmbeddings = docs
+        .map(d => d.embedding)
+        .filter((e): e is number[] => Array.isArray(e) && e.length > 0);
+
+      if (validEmbeddings.length === 0) {
+        const content = await this.app.vault.cachedRead(file);
+        const response = await this.providerManager.embed({
+          input: content.slice(0, 2000),
+          model: '',
+        });
+        if (response.embeddings.length === 0) return [];
+        const results = await this.vectorStore.search(response.embeddings[0], 20, 0.5);
+        return results.filter(r => r.document.path !== file.path);
+      }
+
+      const avgEmbedding = this.averageEmbeddings(validEmbeddings);
       const results = await this.vectorStore.search(avgEmbedding, 20, 0.5);
-      
       return results.filter(r => r.document.path !== file.path);
       
     } catch (error) {
@@ -359,8 +371,13 @@ class FolderSuggestionModal extends Modal {
       
       item.addEventListener('click', () => {
         void (async () => {
-          await this.organizer.moveFile(this.file, suggestion.path);
-          new Notice(`Moved ${this.file.basename} to ${suggestion.path}`);
+          try {
+            await this.organizer.moveFile(this.file, suggestion.path);
+            new Notice(`Moved ${this.file.basename} to ${suggestion.path}`);
+          } catch (error) {
+            console.error('[Calcifer] Move failed:', error);
+            new Notice(`Failed to move file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
           this.close();
         })();
       });

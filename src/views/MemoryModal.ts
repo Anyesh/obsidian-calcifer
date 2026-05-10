@@ -175,9 +175,14 @@ export class MemoryModal extends Modal {
     deleteBtn.setText('Delete');
     deleteBtn.addEventListener('click', () => {
       void (async () => {
-        await this.memoryManager.deleteMemory(memory.id);
-        this.renderMemories();
-        new Notice('Memory deleted');
+        try {
+          await this.memoryManager.deleteMemory(memory.id);
+          this.renderMemories();
+          new Notice('Memory deleted');
+        } catch (error) {
+          console.error('[Calcifer] Delete memory failed:', error);
+          new Notice(`Failed to delete memory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
       })();
     });
   }

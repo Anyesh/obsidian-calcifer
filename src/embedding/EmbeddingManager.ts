@@ -127,7 +127,7 @@ export class EmbeddingManager {
     if (!this.settings.enableEmbedding) return;
     if (this.shouldExclude(path)) return;
     if (this.circuitBroken) return; // Don't queue if circuit is broken
-    if (!this.plugin?.providerManager?.hasAvailableProvider()) return; // No provider available
+    if (!this.providerManager.hasAvailableProvider()) return;
     if (Platform.isMobile && !this.settings.enableOnMobile) return; // Mobile check
     
     this.indexQueue.add(path);
@@ -416,9 +416,8 @@ export class EmbeddingManager {
     } finally {
       this.isIndexing = false;
       
-      // Process any files added during indexing (only if circuit not broken)
       if (this.indexQueue.size > 0 && !this.circuitBroken) {
-        void this.processQueue();
+        void this.processIndexQueue();
       }
     }
   }
@@ -488,15 +487,7 @@ export class EmbeddingManager {
       
       const batch = chunks.slice(i, i + batchSize);
       
-      // Rate limit - with timeout fallback
-      const rateLimitPromise = this.rateLimiter.acquire();
-      const rateLimitTimeout = new Promise<void>((resolve) => {
-        setTimeout(() => {
-          console.warn(`[Calcifer]   Rate limiter taking too long, proceeding anyway`);
-          resolve();
-        }, 5000);
-      });
-      await Promise.race([rateLimitPromise, rateLimitTimeout]);
+      await this.rateLimiter.acquire();
       
       try {
         // Batch embed call - send multiple texts at once

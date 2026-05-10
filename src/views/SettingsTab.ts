@@ -424,20 +424,22 @@ export class CalciferSettingsTab extends PluginSettingTab {
    * Move an endpoint up or down in priority
    */
   private async moveEndpoint(id: string, direction: number): Promise<void> {
-    const endpoints = [...this.plugin.settings.endpoints]
+    const sorted = [...this.plugin.settings.endpoints]
       .sort((a, b) => a.priority - b.priority);
-    
-    const index = endpoints.findIndex(e => e.id === id);
+
+    const index = sorted.findIndex(e => e.id === id);
     if (index === -1) return;
-    
+
     const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= endpoints.length) return;
-    
-    // Swap priorities
-    const temp = endpoints[index].priority;
-    endpoints[index].priority = endpoints[newIndex].priority;
-    endpoints[newIndex].priority = temp;
-    
+    if (newIndex < 0 || newIndex >= sorted.length) return;
+
+    const reordered = [...sorted];
+    [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
+
+    reordered.forEach((endpoint, i) => {
+      endpoint.priority = i;
+    });
+
     await this.plugin.saveSettings();
     this.renderEndpoints();
   }

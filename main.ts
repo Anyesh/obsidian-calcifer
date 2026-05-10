@@ -11,7 +11,7 @@
  */
 
 import { Plugin, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
-import { CalciferSettings, DEFAULT_SETTINGS } from '@/settings';
+import { CalciferSettings, DEFAULT_SETTINGS, sanitizeEndpointConfig } from '@/settings';
 import { CalciferSettingsTab } from '@/views/SettingsTab';
 import { ChatView, CHAT_VIEW_TYPE } from '@/views/ChatView';
 import { MemoryModal } from '@/views/MemoryModal';
@@ -103,7 +103,10 @@ export default class CalciferPlugin extends Plugin {
         this.settings,
         this
       );
-      
+      this.embeddingManager.onProgress((progress) => {
+        this.updateStatusBar('indexing', progress);
+      });
+
       // Memory manager for persistent context (with provider for embedding-based retrieval)
       this.memoryManager = new MemoryManager(this, this.providerManager);
       await this.memoryManager.load();
@@ -380,11 +383,6 @@ export default class CalciferPlugin extends Plugin {
     this.statusBarItem.onClickEvent(() => {
       void this.activateChatView();
     });
-    
-    // Subscribe to embedding progress
-    this.embeddingManager.onProgress((progress) => {
-      this.updateStatusBar('indexing', progress);
-    });
   }
 
   /**
@@ -461,9 +459,14 @@ export default class CalciferPlugin extends Plugin {
   async loadSettings() {
     const savedData = await this.loadData() as Partial<CalciferSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData ?? {});
-    
-    // Migration: increase timeout if it was the old default of 30 seconds
-    // First embedding request can take a long time as model loads into memory
+
+    if (Array.isArray(this.settings.endpoints)) {
+      this.settings.endpoints = this.settings.endpoints.map(e => sanitizeEndpointConfig(e));
+    } else {
+      this.settings.endpoints = [...DEFAULT_SETTINGS.endpoints];
+    }
+
+    // First embedding request can take a long time as model loads into memory.
     if (this.settings.requestTimeoutMs === 30000) {
       this.settings.requestTimeoutMs = 120000;
       await this.saveData(this.settings);

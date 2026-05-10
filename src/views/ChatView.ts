@@ -8,10 +8,15 @@
 import { App, ItemView, WorkspaceLeaf, setIcon, MarkdownRenderer, Notice } from 'obsidian';
 import type CalciferPlugin from '@/../main';
 import type { ChatMessage as ProviderMessage } from '@/providers/types';
+import { ProviderError } from '@/providers/types';
 
 export const CHAT_VIEW_TYPE = 'calcifer-chat-view';
 const CHAT_HISTORY_KEY = 'calcifer-chat-history';
 const MAX_PERSISTED_MESSAGES = 50;
+
+function generateMessageId(): string {
+  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 /**
  * Serializable chat message for persistence
@@ -52,6 +57,7 @@ export class ChatView extends ItemView {
   private plugin: CalciferPlugin;
   private messages: ChatMessage[] = [];
   private isProcessing = false;
+  private saveInFlight: Promise<void> | null = null;
   
   // UI elements
   private messagesContainer: HTMLElement;
@@ -98,7 +104,9 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    // Save messages on close
+    if (this.saveInFlight) {
+      await this.saveInFlight.catch(() => undefined);
+    }
     await this.saveMessages();
   }
 
@@ -119,15 +127,13 @@ export class ChatView extends ItemView {
     const clearBtn = actions.createEl('button', { cls: 'calcifer-action-btn' });
     setIcon(clearBtn, 'trash');
     clearBtn.title = 'Clear chat';
-    clearBtn.addEventListener('click', () => void this.clearChat());
+    this.registerDomEvent(clearBtn, 'click', () => void this.clearChat());
 
     // Settings button
     const settingsBtn = actions.createEl('button', { cls: 'calcifer-action-btn' });
     setIcon(settingsBtn, 'settings');
     settingsBtn.title = 'Open settings';
-    settingsBtn.addEventListener('click', () => {
-      // Open settings tab - use Setting object available on app at runtime
-      // This is an internal API not exposed in types but safe to use
+    this.registerDomEvent(settingsBtn, 'click', () => {
       const appWithSetting = this.app as App & { setting?: { open: () => void } };
       appWithSetting.setting?.open();
     });
@@ -161,16 +167,14 @@ export class ChatView extends ItemView {
       },
     });
 
-    // Handle Enter to send (Shift+Enter for newline)
-    this.inputArea.addEventListener('keydown', (e) => {
+    this.registerDomEvent(this.inputArea, 'keydown', (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         void this.sendMessage();
       }
     });
 
-    // Auto-resize textarea
-    this.inputArea.addEventListener('input', () => {
+    this.registerDomEvent(this.inputArea, 'input', () => {
       this.inputArea.setCssProps({
         '--input-height': 'auto',
       });
@@ -179,12 +183,11 @@ export class ChatView extends ItemView {
       });
     });
 
-    // Send button
     this.sendButton = inputWrapper.createEl('button', {
       cls: 'calcifer-send-button',
       text: 'Send',
     });
-    this.sendButton.addEventListener('click', () => void this.sendMessage());
+    this.registerDomEvent(this.sendButton, 'click', () => void this.sendMessage());
   }
 
   /**
@@ -254,102 +257,95 @@ export class ChatView extends ItemView {
     // Show typing indicator
     const typingId = this.showTypingIndicator();
 
-    // Prepare an empty assistant message element for streaming into
-    const messageId = `msg-${Date.now()}`;
     const message: ChatMessage = {
-      id: messageId,
+      id: generateMessageId(),
       role: 'assistant',
       content: '',
       timestamp: new Date(),
     };
 
+    const refs: { messageEl: HTMLElement | null; contentEl: HTMLElement | null } = {
+      messageEl: null,
+      contentEl: null,
+    };
+    let typingRemoved = false;
+
+    const ensureMessageEl = (): HTMLElement => {
+      if (refs.contentEl) return refs.contentEl;
+      if (!typingRemoved) {
+        this.removeTypingIndicator(typingId);
+        typingRemoved = true;
+      }
+      const msgEl = this.messagesContainer.createDiv({
+        cls: 'calcifer-message calcifer-message--assistant',
+      });
+      const header = msgEl.createDiv({ cls: 'calcifer-message-header' });
+      header.createSpan({ cls: 'calcifer-message-role', text: 'Calcifer' });
+      header.createSpan({
+        cls: 'calcifer-message-time',
+        text: this.formatTime(message.timestamp),
+      });
+      const ctEl = msgEl.createDiv({ cls: 'calcifer-message-content' });
+      refs.messageEl = msgEl;
+      refs.contentEl = ctEl;
+      return ctEl;
+    };
+
     try {
       let streamingText = '';
-      let messageEl: HTMLElement | null = null;
-      let contentEl: HTMLElement | null = null;
-      let typingRemoved = false;
 
       const response = await this.plugin.ragPipeline.chatStream(
         content,
         this.getConversationHistory(),
-        // onChunk: append text as it arrives
         (chunk) => {
-          // Remove typing indicator on first chunk
-          if (!typingRemoved) {
-            this.removeTypingIndicator(typingId);
-            typingRemoved = true;
-
-            // Create the message element now
-            messageEl = this.messagesContainer.createDiv({
-              cls: 'calcifer-message calcifer-message--assistant',
-            });
-            const header = messageEl.createDiv({ cls: 'calcifer-message-header' });
-            header.createSpan({ cls: 'calcifer-message-role', text: 'Calcifer' });
-            header.createSpan({
-              cls: 'calcifer-message-time',
-              text: this.formatTime(message.timestamp),
-            });
-            contentEl = messageEl.createDiv({ cls: 'calcifer-message-content' });
-          }
-
+          const ctEl = ensureMessageEl();
           streamingText += chunk.content;
-          if (contentEl) {
-            contentEl.setText(streamingText);
-          }
+          ctEl.setText(streamingText);
           this.scrollToBottom();
         },
-        // onSources: store for later rendering
         (sources) => {
           message.contextSources = sources;
         }
       );
 
-      // If no chunks arrived (empty response), still clean up typing indicator
       if (!typingRemoved) {
         this.removeTypingIndicator(typingId);
+        typingRemoved = true;
       }
 
-      // Final content from response (may differ if tool blocks were stripped)
       message.content = response.content;
-
-      // If tool summary exists, append it
       if (response.toolSummary) {
-        const finalContent = response.content.trim()
+        message.content = response.content.trim()
           ? response.content + '\n\n**Actions performed:**\n' + response.toolSummary
           : '**Actions performed:**\n' + response.toolSummary;
-        message.content = finalContent;
       }
 
-      // Final markdown render on the content element
-      if (contentEl) {
-        (contentEl as HTMLElement).empty();
+      if (message.content.trim() || (message.contextSources && message.contextSources.length > 0)) {
+        const ctEl = ensureMessageEl();
+        ctEl.empty();
         void MarkdownRenderer.render(
           this.app,
-          message.content,
-          contentEl as HTMLElement,
+          message.content || '_(empty response)_',
+          ctEl,
           '',
           this
         );
       }
 
-      // Render source pills
-      if (messageEl && message.contextSources && message.contextSources.length > 0 && this.plugin.settings.showContextSources) {
-        this.renderSourcePills(messageEl, message.contextSources);
+      if (refs.messageEl && message.contextSources && message.contextSources.length > 0 && this.plugin.settings.showContextSources) {
+        this.renderSourcePills(refs.messageEl, message.contextSources);
       }
 
-      // Store message in history
       this.messages.push(message);
       void this.saveMessages();
       this.scrollToBottom();
 
     } catch (error) {
-      // Remove typing indicator if still showing
-      this.removeTypingIndicator(typingId);
-
+      if (!typingRemoved) {
+        this.removeTypingIndicator(typingId);
+      }
       console.error('Chat error:', error);
-      this.addErrorMessage(
-        `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+      this.addErrorMessage(this.userFacingError(error));
       this.plugin.setStatusError();
     } finally {
       this.isProcessing = false;
@@ -371,7 +367,7 @@ export class ChatView extends ItemView {
       setIcon(pill.createSpan({ cls: 'calcifer-context-pill-icon' }), 'file-text');
       pill.createSpan({ text: this.getFileName(source) });
 
-      pill.addEventListener('click', () => {
+      this.registerDomEvent(pill, 'click', () => {
         const file = this.app.vault.getFileByPath(source);
         if (file) {
           void this.app.workspace.openLinkText(source, '', false);
@@ -385,7 +381,7 @@ export class ChatView extends ItemView {
    */
   private addMessage(role: 'user' | 'assistant', content: string, contextSources?: string[]): void {
     const message: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: generateMessageId(),
       role,
       content,
       timestamp: new Date(),
@@ -405,7 +401,7 @@ export class ChatView extends ItemView {
    */
   private addSystemMessage(content: string): void {
     const message: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: generateMessageId(),
       role: 'assistant',
       content,
       timestamp: new Date(),
@@ -420,7 +416,7 @@ export class ChatView extends ItemView {
    */
   private addErrorMessage(content: string): void {
     const message: ChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: generateMessageId(),
       role: 'assistant',
       content,
       timestamp: new Date(),
@@ -476,9 +472,8 @@ export class ChatView extends ItemView {
         const pill = sourcesEl.createSpan({ cls: 'calcifer-context-pill' });
         setIcon(pill.createSpan({ cls: 'calcifer-context-pill-icon' }), 'file-text');
         pill.createSpan({ text: this.getFileName(source) });
-        
-        // Click to open file
-        pill.addEventListener('click', () => {
+
+        this.registerDomEvent(pill, 'click', () => {
           const file = this.app.vault.getFileByPath(source);
           if (file) {
             void this.app.workspace.openLinkText(source, '', false);
@@ -548,30 +543,30 @@ export class ChatView extends ItemView {
     );
   }
 
-  /**
-   * Save messages to plugin data
-   */
-  private async saveMessages(): Promise<void> {
-    try {
-      const data = (await this.plugin.loadData() as ChatPluginData | null) || {};
-      
-      // Convert to serializable format, limit count
-      const toSave: PersistedMessage[] = this.messages
-        .filter(m => !m.isError) // Don't persist error messages
-        .slice(-MAX_PERSISTED_MESSAGES)
-        .map(m => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp.getTime(),
-          contextSources: m.contextSources,
-        }));
-      
-      data[CHAT_HISTORY_KEY] = toSave;
-      await this.plugin.saveData(data);
-    } catch (error) {
-      console.error('[Calcifer] Failed to save chat history:', error);
-    }
+  private saveMessages(): Promise<void> {
+    const next = (this.saveInFlight ?? Promise.resolve()).then(async () => {
+      try {
+        const data = (await this.plugin.loadData() as ChatPluginData | null) || {};
+        const toSave: PersistedMessage[] = this.messages
+          .filter(m => !m.isError)
+          .slice(-MAX_PERSISTED_MESSAGES)
+          .map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp.getTime(),
+            contextSources: m.contextSources,
+          }));
+        data[CHAT_HISTORY_KEY] = toSave;
+        await this.plugin.saveData(data);
+      } catch (error) {
+        console.error('[Calcifer] Failed to save chat history:', error);
+      }
+    });
+    this.saveInFlight = next.finally(() => {
+      if (this.saveInFlight === next) this.saveInFlight = null;
+    });
+    return this.saveInFlight;
   }
 
   /**
@@ -632,5 +627,29 @@ export class ChatView extends ItemView {
   private getFileName(path: string): string {
     const parts = path.split('/');
     return parts[parts.length - 1].replace(/\.md$/, '');
+  }
+
+  private userFacingError(error: unknown): string {
+    if (error instanceof ProviderError) {
+      switch (error.code) {
+        case 'CONNECTION_FAILED':
+          return 'Cannot reach the AI provider. Check that the server is running and the URL in settings is correct.';
+        case 'AUTHENTICATION_FAILED':
+          return 'Authentication failed. Check your API key in settings.';
+        case 'MODEL_NOT_FOUND':
+          return 'The configured model was not found. Check the model name in settings.';
+        case 'RATE_LIMITED':
+          return 'Rate limit reached. Wait a moment and try again.';
+        case 'TIMEOUT':
+          return 'The request timed out. Try again or check the provider.';
+        case 'INVALID_REQUEST':
+          return 'The request was rejected by the provider. Check your settings.';
+        case 'SERVER_ERROR':
+          return 'The provider returned a server error. Try again later.';
+        default:
+          return 'The provider returned an unexpected error. See the developer console for details.';
+      }
+    }
+    return 'Something went wrong. See the developer console for details.';
   }
 }

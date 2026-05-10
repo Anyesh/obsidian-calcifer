@@ -131,22 +131,31 @@ export class VectorStore {
    */
   async upsert(doc: VectorDocument): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(doc);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => {
-        const error = request.error;
-        if (error?.name === 'QuotaExceededError') {
+      let settled = false;
+      const fail = (err: DOMException | null) => {
+        if (settled) return;
+        settled = true;
+        if (err?.name === 'QuotaExceededError') {
           reject(new Error('Storage quota exceeded. Try clearing the embedding index.'));
         } else {
-          reject(new Error(`Failed to upsert: ${error?.message}`));
+          reject(new Error(`Failed to upsert: ${err?.message ?? 'unknown'}`));
         }
       };
+
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        this.invalidateCache();
+        resolve();
+      };
+      request.onerror = () => fail(request.error);
+      transaction.onabort = () => fail(transaction.error);
     });
   }
 
@@ -155,49 +164,36 @@ export class VectorStore {
    */
   async upsertBatch(docs: VectorDocument[]): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
+
+    if (docs.length === 0) return;
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
 
-      let completed = 0;
-      let hasError = false;
-      
-      // Handle transaction-level errors (including quota)
-      transaction.onerror = () => {
-        if (!hasError) {
-          hasError = true;
-          const error = transaction.error;
-          if (error?.name === 'QuotaExceededError') {
-            reject(new Error('Storage quota exceeded. Try clearing the embedding index.'));
-          } else {
-            reject(new Error(`Transaction failed: ${error?.message}`));
-          }
+      let settled = false;
+      const fail = (err: DOMException | null, prefix: string) => {
+        if (settled) return;
+        settled = true;
+        if (err?.name === 'QuotaExceededError') {
+          reject(new Error('Storage quota exceeded. Try clearing the embedding index.'));
+        } else {
+          reject(new Error(`${prefix}: ${err?.message ?? 'unknown'}`));
         }
       };
 
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        this.invalidateCache();
+        resolve();
+      };
+      transaction.onerror = () => fail(transaction.error, 'Transaction failed');
+      transaction.onabort = () => fail(transaction.error, 'Transaction aborted');
+
       for (const doc of docs) {
         const request = store.put(doc);
-        
-        request.onsuccess = () => {
-          completed++;
-          if (completed === docs.length && !hasError) {
-            resolve();
-          }
-        };
-        
-        request.onerror = () => {
-          if (!hasError) {
-            hasError = true;
-            reject(new Error(`Failed to upsert batch: ${request.error?.message}`));
-          }
-        };
-      }
-
-      // Handle empty batch
-      if (docs.length === 0) {
-        resolve();
+        request.onerror = () => fail(request.error, 'Failed to upsert batch');
       }
     });
   }
@@ -243,15 +239,27 @@ export class VectorStore {
    */
   async delete(id: string): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error(`Failed to delete: ${request.error?.message}`));
+      let settled = false;
+      const fail = (msg: string) => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(msg));
+      };
+
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        this.invalidateCache();
+        resolve();
+      };
+      request.onerror = () => fail(`Failed to delete: ${request.error?.message}`);
+      transaction.onabort = () => fail(`Delete aborted: ${transaction.error?.message ?? 'unknown'}`);
     });
   }
 
@@ -260,39 +268,37 @@ export class VectorStore {
    */
   async deleteByPath(path: string): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
 
-    const docs = await this.getByPath(path);
-    
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
+      const index = store.index('path');
+      const cursorReq = index.openCursor(IDBKeyRange.only(path));
 
-      let completed = 0;
-      let hasError = false;
+      let settled = false;
+      const fail = (msg: string) => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(msg));
+      };
 
-      for (const doc of docs) {
-        const request = store.delete(doc.id);
-        
-        request.onsuccess = () => {
-          completed++;
-          if (completed === docs.length && !hasError) {
-            resolve();
-          }
-        };
-        
-        request.onerror = () => {
-          if (!hasError) {
-            hasError = true;
-            reject(new Error(`Failed to delete by path: ${request.error?.message}`));
-          }
-        };
-      }
-
-      // Handle empty result
-      if (docs.length === 0) {
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        this.invalidateCache();
         resolve();
-      }
+      };
+      transaction.onerror = () => fail(`Failed to delete by path: ${transaction.error?.message}`);
+      transaction.onabort = () => fail(`Delete by path aborted: ${transaction.error?.message ?? 'unknown'}`);
+
+      cursorReq.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+      cursorReq.onerror = () => fail(`Delete cursor failed: ${cursorReq.error?.message}`);
     });
   }
 
@@ -301,19 +307,21 @@ export class VectorStore {
    */
   async updatePath(oldPath: string, newPath: string): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
 
     const docs = await this.getByPath(oldPath);
     if (docs.length === 0) return;
-    
+
     // Use a single transaction for atomicity
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      
+
       let hasError = false;
-      
-      transaction.oncomplete = () => resolve();
+
+      transaction.oncomplete = () => {
+        this.invalidateCache();
+        resolve();
+      };
       transaction.onerror = () => {
         if (!hasError) {
           hasError = true;
@@ -347,15 +355,27 @@ export class VectorStore {
    */
   async clear(): Promise<void> {
     this.ensureInitialized();
-    this.invalidateCache();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.clear();
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error(`Failed to clear: ${request.error?.message}`));
+      let settled = false;
+      const fail = (msg: string) => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(msg));
+      };
+
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        this.invalidateCache();
+        resolve();
+      };
+      request.onerror = () => fail(`Failed to clear: ${request.error?.message}`);
+      transaction.onabort = () => fail(`Clear aborted: ${transaction.error?.message ?? 'unknown'}`);
     });
   }
 

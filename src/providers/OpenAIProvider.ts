@@ -423,9 +423,9 @@ export class OpenAIProvider implements AIProvider {
       return this.requestWithFetch<T>(url, 'POST', body);
     }
 
-    // Wrap requestUrl with timeout
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutHandle = setTimeout(() => {
         reject(new Error(`Request timed out after ${this.timeoutMs}ms`));
       }, this.timeoutMs);
     });
@@ -436,35 +436,33 @@ export class OpenAIProvider implements AIProvider {
       headers: this.getHeaders(),
       body: JSON.stringify(body),
       contentType: 'application/json',
-      throw: false, // Handle errors manually for better error messages
+      throw: false,
     };
 
     let response;
     try {
       response = await Promise.race([requestUrl(params), timeoutPromise]);
     } catch (error) {
-      // Log detailed error for debugging
       console.error('[Calcifer] Request failed:', {
         url,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
       throw error;
+    } finally {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
     }
-    
+
     if (response.status >= 400) {
       this.handleErrorResponse(response.status, response.json);
     }
-    
+
     return response.json as T;
   }
 
   /**
-   * Make request using native fetch API
-   */
-  /**
-   * Make request using native fetch API
-   * NOTE: Used when requestUrl fails (self-signed certs, etc.)
+   * Make request using native fetch API.
+   * Used when requestUrl fails (self-signed certs, etc.)
    */
   private async requestWithFetch<T>(url: string, method: 'GET' | 'POST', body?: unknown): Promise<T> {
     const controller = new AbortController();

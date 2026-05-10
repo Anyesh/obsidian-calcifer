@@ -209,8 +209,9 @@ export class RAGPipeline {
       }
     }
 
-    // 6. Memory extraction (fire and forget)
-    void this.extractMemories(query, content);
+    this.extractMemories(query, content).catch((error: unknown) => {
+      console.warn('[Calcifer] Memory extraction rejected:', error instanceof Error ? error.message : error);
+    });
 
     return {
       content,

@@ -282,12 +282,12 @@ function findBreakPoint(text: string, start: number, maxEnd: number): number {
  */
 export function cleanText(text: string): string {
   return text
-    // Remove YAML frontmatter
     .replace(/^---[\s\S]*?---\n?/, '')
-    // Strip code fence markers but preserve code content
-    .replace(/```\w*\n?([\s\S]*?)```/g, '$1')
-    // Remove inline code
-    .replace(/`[^`]+`/g, (match) => match.slice(1, -1))
+    .replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang: string | undefined, body: string) => {
+      const tag = lang ? `${lang} code: ` : 'code: ';
+      return tag + body;
+    })
+    .replace(/`([^`]+)`/g, '$1')
     // Remove image syntax but keep alt text
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
     // Remove link syntax but keep link text

@@ -310,17 +310,14 @@ Format: [{"tag": "topic-name", "confidence": 0.9}, ...]`;
     }
     
     this.isProcessing = true;
-    
+
     try {
-      const paths = Array.from(this.tagQueue);
-      this.tagQueue.clear();
-      
-      // In 'suggest' mode, background processing is disabled
-      // User must manually invoke the command to see the modal
       if (this.settings.autoTagMode === 'suggest') {
-        // Skip background processing in suggest mode
         return;
       }
+
+      const paths = Array.from(this.tagQueue);
+      this.tagQueue.clear();
       
       for (const path of paths) {
         if (this.circuitBroken) break;
@@ -454,8 +451,13 @@ class TagSuggestionModal extends Modal {
         .setCta()
         .onClick(async () => {
           if (this.selectedTags.size > 0) {
-            await this.tagger.applyTags(this.file, Array.from(this.selectedTags));
-            new Notice(`Added tags to ${this.file.basename}: ${Array.from(this.selectedTags).join(', ')}`);
+            try {
+              await this.tagger.applyTags(this.file, Array.from(this.selectedTags));
+              new Notice(`Added tags to ${this.file.basename}: ${Array.from(this.selectedTags).join(', ')}`);
+            } catch (error) {
+              console.error('[Calcifer] Tag apply failed:', error);
+              new Notice(`Failed to apply tags: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
           }
           this.close();
         })
